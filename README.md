@@ -8,4 +8,6 @@ _ tuku _ palāhu _ sa dug _ kašādu _ nam kud ilu rabû arāru e gi
 todo:
  - json support
  - keep track of n-gram distances
- - neater output formats
+ - neater output formats, csv, xlxs, json; score tables, matrices etc.
+ - option for symmetric window
+ - more measures
