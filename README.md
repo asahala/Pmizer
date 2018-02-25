@@ -1,13 +1,18 @@
 # Collocations
-Calculates different word association measures. The window splitting and n-gram finding algorithms are quite well optimized now. Designed specially for cuneiform languages. Give input as a lemmatized text file. Replace lacunae with _.
+Calculates different word association measures. The window splitting and n-gram finding algorithms are quite well optimized now. Designed specially for cuneiform languages (but not restricted to them). Takes input as a lemmatized text file with lacunae marked as '_'.
 
 Example:
 
 _ tuku _ palāhu _ sa dug _ kašādu _ nam kud ilu rabû arāru e gi
+monkey eat coconut and the sun be shine
 
-todo:
- - json support
- - keep track of n-gram distances
- - neater output formats, csv, xlxs, json; score tables, matrices etc.
- - option for symmetric window
- - more measures
+Features:
+- Symmetric and asymmetric windows
+- Word distance tracking
+- Regex support for word/stopword filters
+- High performance algorithms
+
+Todo:
+- json support
+- neater output formats, csv, xlxs, json; score tables, matrices etc.
+- more measures
