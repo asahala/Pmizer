@@ -73,6 +73,9 @@ Constraints and properties may be set by using the following kwargs:
                     NOTE: Slows bigram counting 2 or 3 times depending
                     on the window size.
 
+  ´distance_scaling´ Scale scores by using mutual distances instead of
+                    window size. 
+
 ========================================================================
 Associations.score_bigrams(filename, measure) ==========================
 ========================================================================
@@ -177,7 +180,8 @@ class Associations:
         self.regex_stopwords = []
         self.regex_words = {1: [], 2: []}
         self.distances = {}
-        self.track_distance = True
+        self.track_distance = False
+        self.scale_distance = False
     
     def set_constraints(self, **kwargs):
         """ Set constraints. Separate regular expressions from the
@@ -235,23 +239,26 @@ class Associations:
         return translation
 
     def get_distance(self, bigram):
-        """ Calculate average distance for bigram's words """
+        """ Calculate average distance for bigram's words; if not
+        used, the distance will be equal to window size. """
         if self.track_distance:
             distance = self._trim_float(sum(self.distances[bigram])
                                     / len(self.distances[bigram]))
         else:
-            distance = ''
+            distance = self.windowsize
         return distance
 
     def score_bigrams(self, filename, measure):
-
+        """ Main function for bigram scoring """
         self.read_file(filename)
         
-        def scale(bf):
+        def scale(bf, distance):
             """ Scale bigram frequency with window size. Makes the
             scores comparable with NLTK/Collocations PMI measure """
-            if WINDOW_SCALING:
+            if WINDOW_SCALING and not self.scale_distance:
                 return bf / (self.windowsize - 1)
+            if WINDOW_SCALING and self.scale_distance:
+                return bf / (distance)
             else:
                 return bf
 
@@ -304,21 +311,25 @@ class Associations:
                     yield bigram
 
         def count_bigrams_symmetric_dist():
-            """ Calculate bigrams within each symmetric window """
+            """ Calculate bigrams within each symmetric window and
+            track distances. """
+
+            def chain(w1, w2):
+                """ Make zip-chain from two lists.
+                [a, b], [c, d] -> [a, c, b, d] """
+                chain = [' ']*len(w1+w2)
+                chain[::2] = w1
+                chain[1::2] = w2
+                return chain
+
             print('counting bigrams...')
-            def slice_zip(w1, w2):
-                r = [' ']*len(w1+w2)
-                r[::2] = w1
-                r[1::2] = w2
-                return r
-            
             wz = self.windowsize-1
             for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
                 left = list(w[0:wz])
                 right = list(w[wz+1:])
                 for bigram in itertools.product([w[wz]], left+right):
-                    context = slice_zip(left[::-1], right)
-                    min_dist = context.index(bigram[1])
+                    context = chain(left[::-1], right)
+                    min_dist = math.floor(context.index(bigram[1])/2) +1
                     """ Force items into dictionary as it is faster
                     than performing key comparisons """
                     try:
@@ -342,15 +353,17 @@ class Associations:
             for better efficiency """
             print('counting bigrams...')
             for w in zip(*[self.text[i:] for i in range(self.windowsize)]):
-                for bigram in itertools.product([w[0]], w[1:]):
+                bigrams = enumerate(itertools.product([w[0]], w[1:]))
+                for bigram in bigrams:
                     """ Force items into dictionary as it is faster
                     than performing key comparisons """
                     try:
-                        self.distances[bigram].append(w[1:].index(bigram[1]))
+                        self.distances[bigram[1]].append(bigram[0] + 1)
                     except:
-                        self.distances[bigram] = [w[1:].index(bigram[1])]
+                        self.distances[bigram[1]] = [bigram[0] + 1]
                     finally:
-                        yield bigram
+                        yield bigram[1]
+
 
         """ Selector for window type and distance tracking """
         if self.symmetry:
@@ -373,7 +386,7 @@ class Associations:
                 distance = self.get_distance(bigram)
                 freq_w1 = self.word_freqs[w1]
                 freq_w2 = self.word_freqs[w2]
-                score = measure.score(scale(bigram_freqs[bigram]),
+                score = measure.score(scale(bigram_freqs[bigram], distance),
                                       freq_w1, freq_w2, self.corpus_size)
                 self.scored.append((bigram, translation, bigram_freqs[bigram],
                             freq_w1, freq_w2, self._trim_float(score),
@@ -382,16 +395,16 @@ class Associations:
         scored = sorted(self.scored)
 
         for x in scored:
-            print(x)
+            pass#print(x)
 
 def demo():
     st = time.time()
     a = Associations()
     a.set_constraints(windowsize = 10,
-                      freq_threshold = 2,
+                      freq_threshold = 5,
                       symmetry=False,
                       track_distance=False,
-                      words1=['Aššur'])
+                      scale_distance=False)
     
     a.score_bigrams('neoA', PPMI2)
     et = time.time() - st
