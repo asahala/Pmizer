@@ -26,7 +26,65 @@ Association measures - Aleksi Sahala 2018 - University of Helsinki =====
 ========================================================================
 
 / Deep Learning and Semantic Domains in Akkadian Texts
-/ Center of Excellence in Ancient Near Eastern Empires
+/ Centre of Excellence in Ancient Near Eastern Empires
+/ Language Bank of Finland
+
+========================================================================
+General description ====================================================
+========================================================================
+
+This script calculates different word association measures derived from
+PMI (Pointwise Mutual Information). In Language Technology, the PMI is
+used to find collocations and associations between words.
+
+By its basic definition, PMI is the ratio of the actual probability that
+two words are co-occurring within a certain distance from each other, to
+the expected chance of those words co-occurring independently. Formally:
+
+                    p(w1,w2)    
+  PMI(w1,w2) = log ----------
+                   p(w1)p(w2)
+
+PMI score of 0 indicates perfect independence. Scores greater than 0 may
+point to a possible collocation, and scores lesser than 0 indicate that
+words are found together less often than expected.
+
+With small window sizes (i.e. the maximum distance between the words),
+PMI can be used to find fixed expressions and compound words such as
+´police car´, ´subway station´, ´kick (the) bucket´. With larger
+window sizes PMI usually finds more abstract semantic concepts:
+´Microsoft ... software´, ´banana ... fruit´, ´admiral ... navy´.
+
+For a practical example, below are listed the best ten collocates for
+the Akkadian word ´kakku´ [weapon], using a window size of 10:
+
+ PMI     Colloc.  Translation.
+ 9.081   ezzu     [to be furious, angry] 
+ 7.9028  maqātu   [to fall, to defeat]
+ 7.7721  tiāmtu   [sea] (*)
+ 7.2058  tāhāzu   [battle]
+ 6.5646  nakru    [enemy]
+ 6.2976  šarrūtu  [kingship]
+ 6.1073  dannu    [strong one]
+ 5.9267  našû     [lifted]
+ 5.8615  Aššur    [God Aššur]
+ 5.0414  ālu      [city]
+
+(* this comes from a formulaic expression found in the Neo-Assyrian
+royal inscriptions, where all the people from the ´Upper Sea´ to the
+´Lower Sea´ (i.e. Mediterranean Sea and the Persian Gulf) were
+subjugated under the Assyrian rule by ´great weapons granted by the
+god Aššur´).
+
+From these, we can reconstruct some kind of prototypical semantic field
+for ´weapon´ as it was probably perceived by the ancient Assyrians:
+
+    WEAPON is an object that is
+      - LIFTED to intimidate and to show power
+      - a symbol of FURY carried by the STRONG ONES
+      - used in BATTLES to DEFEAT ENEMIES and to subjugate CITIES under
+        the KINGSHIP of Assyria, from SEA to SEA.
+      - strong weapons are granted to the king by the GOD AŠŠUR
 
 ========================================================================
 Associations.set_properties(*kwargs) ===================================
@@ -34,26 +92,26 @@ Associations.set_properties(*kwargs) ===================================
 
 Constraints and properties may be set by using the following kwargs:
 
-  ´windowsize´      (int) collocational window that defines the
+ ´windowsize´       (int) collocational window that defines the
                     maximum mutual distance of the elements of a bigram.
                     Minimum distance is 2, which means that the words
                     are next to each another.
 
-  ´freq_threshold´  (int) minimum allowed bigram frequency.
+ ´freq_threshold´   (int) minimum allowed bigram frequency.
 
-  ´symmetry´        (bool) Use symmetric window. If not used, the window
+ ´symmetry´         (bool) Use symmetric window. If not used, the window
                     is forward-looking. For example, with a window size
                     of 3 and w4 being our word of interest:
 
-                            w1 w2 w3 w4 w5 w6 w7
-                    symm.       +--+--^--+--+
-                    asymm.            ^--+--+
+                                 w1 w2 w3 w4 w5 w6 w7
+                    symmetric       +--+--^--+--+
+                    asymmetric            ^--+--+
   
-  ´words1´          (list) words of interest: Bigram(word1, word2)
-  ´words2´          Words of interest may also be expressed as compiled
+ ´words1´           (list) words of interest: Bigram(word1, word2)
+ ´words2´           Words of interest may also be expressed as compiled
                     regular expressions. See exampes in ´stopwords´.
 
-  ´stopwords´       (list) discard uninteresting words like
+ ´stopwords´        (list) discard uninteresting words like
                     prepositions, numbers etc. May be expressed as
                     compiled regular expressions. For example
                     [re.compile('\d+?'), re.compile('^[A-ZŠṢṬĀĒĪŪ].+')]
@@ -65,7 +123,7 @@ Constraints and properties may be set by using the following kwargs:
                     makes the comparison significantly faster, e.g. 
                     [re.compile('^(\d+?|[A-ZŠṢṬĀĒĪŪ].+)'].
 
-  ´track_distance´  (bool) calculate average distance between the words
+ ´track_distance´   (bool) calculate average distance between the words
                     of the bigram. If the same bigram can be found
                     several times within the window, only the closest
                     distance is taken into account.
@@ -73,7 +131,7 @@ Constraints and properties may be set by using the following kwargs:
                     NOTE: Slows bigram counting 2 or 3 times depending
                     on the window size.
 
-  ´distance_scaling´ Scale scores by using mutual distances instead of
+ ´distance_scaling´ Scale scores by using mutual distances instead of
                     window size. 
 
 ========================================================================
@@ -174,15 +232,28 @@ class Associations:
         self.text = []
         self.windowsize = 2
         self.freq_threshold = 1
-        self.symmetry = False
+        self.symmetry = False    
         self.words = {1: [], 2: []}
         self.stopwords = ['', LACUNA, BUFFER]
         self.regex_stopwords = []
         self.regex_words = {1: [], 2: []}
         self.distances = {}
         self.track_distance = False
-        self.scale_distance = False
-    
+        self.distance_scaling = False
+        self.log_base = LOGBASE
+        self.window_scaling = WINDOW_SCALING
+
+    def __repr__(self):
+        """ Return variables for log file """
+        debug = []
+        tab = max([len(k)+2 for k in self.__dict__.keys()])
+        for k, v in self.__dict__.items():
+            if k not in ['scored', 'text', 'regex_stopwords',
+                         'regex_words', 'distances', 'anywords', 'anywords1',
+                         'anywords2']:
+                debug.append('%s%s%s' % (k, ' '*(tab-len(k)+1), str(v)))
+        return '\n'.join(debug) + '\n'
+        
     def set_constraints(self, **kwargs):
         """ Set constraints. Separate regular expressions from the
         string variables, as string comparison is significantly faster
@@ -214,7 +285,6 @@ class Associations:
         """ Open lemmatized input file with one text per line.
         Add buffer equal to window size after each text to prevent
         words from different texts being associated. """
-        
         with open(filename, 'r', encoding="utf-8") as data:
             print('reading %s...' % filename)
             self.text = [BUFFER]*self.windowsize
@@ -223,10 +293,10 @@ class Associations:
                 self.text.extend(line.strip('\n').split(' ')
                                  + [BUFFER]*self.windowsize)
                 buffers += 1
-                
-        self.word_freqs = Counter(self.text)
-        self.corpus_size = len(self.text) - (buffers * self.windowsize)
 
+        self.filename = filename
+        self.corpus_size = len(self.text) - (buffers * self.windowsize)
+        
     def _trim_float(self, number):
         return float('{0:.4f}'.format(number))
 
@@ -255,9 +325,9 @@ class Associations:
         def scale(bf, distance):
             """ Scale bigram frequency with window size. Makes the
             scores comparable with NLTK/Collocations PMI measure """
-            if WINDOW_SCALING and not self.scale_distance:
+            if WINDOW_SCALING and not self.distance_scaling:
                 return bf / (self.windowsize - 1)
-            if WINDOW_SCALING and self.scale_distance:
+            if WINDOW_SCALING and self.distance_scaling:
                 return bf / (distance)
             else:
                 return bf
@@ -343,7 +413,7 @@ class Associations:
             """ Calculate bigrams within each forward-looking window """
             print('counting bigrams...')
             for w in zip(*[self.text[i:] for i in range(self.windowsize)]):
-                for bigram in itertools.product([w[0]], w[1:]):    
+                for bigram in itertools.product([w[0]], w[1:]):
                     yield bigram
 
         def count_bigrams_forward_dist():
@@ -364,7 +434,6 @@ class Associations:
                     finally:
                         yield bigram[1]
 
-
         """ Selector for window type and distance tracking """
         if self.symmetry:
             if self.track_distance:
@@ -378,14 +447,15 @@ class Associations:
                 bigram_freqs = Counter(count_bigrams_forward())
 
         """ Score bigrams by given measure """
+        word_freqs = Counter(self.text)
         print('calculating scores...')
         for bigram in bigram_freqs.keys():
             w1, w2 = bigram[0], bigram[1]
             if is_valid(w1, w2, bigram_freqs[bigram]):
                 translation = self.get_translation(w2)
                 distance = self.get_distance(bigram)
-                freq_w1 = self.word_freqs[w1]
-                freq_w2 = self.word_freqs[w2]
+                freq_w1 = word_freqs[w1]
+                freq_w2 = word_freqs[w2]
                 score = measure.score(scale(bigram_freqs[bigram], distance),
                                       freq_w1, freq_w2, self.corpus_size)
                 self.scored.append((bigram, translation, bigram_freqs[bigram],
@@ -395,18 +465,20 @@ class Associations:
         scored = sorted(self.scored)
 
         for x in scored:
-            pass#print(x)
+            print(x)
 
 def demo():
     st = time.time()
     a = Associations()
     a.set_constraints(windowsize = 10,
-                      freq_threshold = 5,
+                      freq_threshold = 20,
                       symmetry=False,
                       track_distance=False,
-                      scale_distance=False)
+                      distance_scaling=False,
+                      words1=['kakku', 'ezzu'])
     
-    a.score_bigrams('neoA', PPMI2)
+    a.score_bigrams('neoA', PMI)
+    print(a)
     et = time.time() - st
     print('time', et)
 
