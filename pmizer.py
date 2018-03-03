@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from collections import Counter
+import sys
 import time
 import itertools
 import math
@@ -13,13 +14,12 @@ except ImportError:
     akkadian_dict = {}
 
 
-
-__version__ = "2018-02-25"
+__version__ = "2018-03-03"
 
 WINDOW_SCALING = False    # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
 LACUNA = '_'              # Symbol for lacunae in cuneiform languages
-BUFFER = '<buffer>'       # Buffer symbol; added after each line
+BUFFER = '<BUFFER>'       # Buffer symbol; added after each line
 
 """ ====================================================================
 Association measures - Aleksi Sahala 2018 - University of Helsinki =====
@@ -29,6 +29,7 @@ Association measures - Aleksi Sahala 2018 - University of Helsinki =====
 / Centre of Excellence in Ancient Near Eastern Empires
 / Language Bank of Finland
 
+
 ========================================================================
 General description ====================================================
 ========================================================================
@@ -37,17 +38,18 @@ This script calculates different word association measures derived from
 PMI (Pointwise Mutual Information). In Language Technology, the PMI is
 used to find collocations and associations between words.
 
-By its basic definition, PMI is the ratio of the actual probability that
-two words are co-occurring within a certain distance from each other, to
-the expected chance of those words co-occurring independently. Formally:
+By its basic definition, PMI is the ratio of p(w1,w2), i.e. the actual
+probability that two words are co-occurring within a certain distance
+from each other to p(a)p(b), i.e. the expected chance of those words
+co-occurring independently.
 
-                    p(w1,w2)    
-  PMI(w1,w2) = log ----------
+                    p(w1,w2)          
+  PMI(w1,w2) = log ----------         
                    p(w1)p(w2)
 
 PMI score of 0 indicates perfect independence. Scores greater than 0 may
 point to a possible collocation, and scores lesser than 0 indicate that
-words are found together less often than expected.
+words are found together less often than expected by chance.
 
 With small window sizes (i.e. the maximum distance between the words),
 PMI can be used to find fixed expressions and compound words such as
@@ -56,35 +58,36 @@ window sizes PMI usually finds more abstract semantic concepts:
 ´Microsoft ... software´, ´banana ... fruit´, ´admiral ... navy´.
 
 For a practical example, below are listed the best ten collocates for
-the Akkadian word ´kakku´ [weapon], using a window size of 10:
+the Neo-Assyrian word ´kakku´ [weapon], using a window size of 10:
 
- PMI     Colloc.  Translation.
- 9.081   ezzu     [to be furious, angry] 
- 7.9028  maqātu   [to fall, to defeat]
- 7.7721  tiāmtu   [sea] (*)
- 7.2058  tāhāzu   [battle]
- 6.5646  nakru    [enemy]
- 6.2976  šarrūtu  [kingship]
- 6.1073  dannu    [strong one]
- 5.9267  našû     [lifted]
- 5.8615  Aššur    [God Aššur]
- 5.0414  ālu      [city]
+ PMI     Colloc.   Translation.
+ 9.081   ezzu      [to be furious, angry] 
+ 7.9028  maqâtu    [to fall, to defeat]
+ 7.7721  tiâmtu    [sea] (*)
+ 7.2058  tâhâzu    [battle]
+ 6.5646  nakru     [enemy]
+ 6.2976  sharrûtu  [kingship]
+ 6.1073  dannu     [having strength]
+ 5.9267  nashû     [lifted]
+ 5.8615  Ashur     [God Ashur]
+ 5.0414  âlu       [city]
 
 (* this comes from a formulaic expression found in the Neo-Assyrian
-royal inscriptions, where all the people from the ´Upper Sea´ to the
-´Lower Sea´ (i.e. Mediterranean Sea and the Persian Gulf) were
-subjugated under the Assyrian rule by ´great weapons granted by the
-god Aššur´).
+royal inscriptions, where all the people from the ´Upper Sea´ (Medi-
+terranean) to the ´Lower Sea´ (Persian Gulf) were subjugated under
+the Assyrian rule by ´great weapons granted by the god Ashur´).
 
 From these, we can reconstruct some kind of prototypical semantic field
-for ´weapon´ as it was probably perceived by the ancient Assyrians:
+for ´weapon´ as it was probably perceived by the ancient Assyrians, at
+least in the context of royal inscriptions:
 
     WEAPON is an object that is
       - LIFTED to intimidate and to show power
-      - a symbol of FURY carried by the STRONG ONES
-      - used in BATTLES to DEFEAT ENEMIES and to subjugate CITIES under
-        the KINGSHIP of Assyria, from SEA to SEA.
-      - strong weapons are granted to the king by the GOD AŠŠUR
+      - associated with FURY, ANGER and STRENGTH
+      - used in BATTLES to DEFEAT ENEMIES and their CITIES between
+        the SEAS in order to enforce the Assyrian KINGSHIP.
+      - great weapons (= success in battle) is granted by the GOD ASHUR
+
 
 ========================================================================
 Associations.set_properties(*kwargs) ===================================
@@ -132,19 +135,39 @@ Constraints and properties may be set by using the following kwargs:
                     on the window size.
 
  ´distance_scaling´ Scale scores by using mutual distances instead of
-                    window size. 
+                    window size.
+
 
 ========================================================================
-Associations.score_bigrams(filename, measure) ==========================
+Reading files ==========================================================
 ========================================================================
 
-Input file should contain lemmas separated by spaces, e.g.
+Associations.read_raw(filename) ----------------------------------------
 
- monkey eat coconut and the sun be shine
+Takes a lemmatized raw text file as an input. For example, a text
+"Monkeys ate coconuts and the sun was shining" should be represented as:
 
-Bigrams are not allowed to span from line to another. If you want
-to disallow, for example, bigrams being recognized between paragraphs,
-the text should contain one paragraph per line.
+     monkey eat coconut and the sun be shine
+
+Bigrams are NOT allowed to span from line to another. Thus, if you want
+to disallow, collocations spanning from sentence to another, the text
+should contain one sentence per line.
+
+
+Associations.read_vrt(filename, word_attribute, delimiter) -------------
+
+Reads VRT files. You must define the ´word_attribute´ index (int), from
+which the lemmas can be found. ´delimiter´ is used to set the boundary,
+over which collocates are not allowed to span. Normally this is either
+´<text>´, ´<paragraph>´ or ´<sentence>´, but may as well be ´<clause>´
+or ´<line>´, too, if such are available in the file.
+
+NOTE: Window size must always be specified before reading the file!
+
+
+========================================================================
+Associations.score_bigrams(measure) ====================================
+========================================================================
 
 Argument ´measure´ must be one of the following:
 
@@ -154,22 +177,6 @@ Argument ´measure´ must be one of the following:
     PMI3            PMI^3 (Daille 1994)
     PPMI            Positive PMI. As PMI but discards negative scores.
     PPMI2           Positive PMI^2 (Role & Nadif 2011)
-
-Each measure has its pros and cons. The table below indicates if the
-measure has a low-frequency bias (LFB) (i.e. it tends to give high
-scores for low-frequency bigrams). Measures with low or negative LFB
-are generally more reliable if low frequency thresholds are used.
-
-MAX, IND and MIN indicate if the measure has fixed upper bound,
-independence threshold and lower bound. Measures with fixed bounds
-are easier to compare with each other.
-
-              LFB    MAX    IND    MIN      
-    PMI       high   no     yes    yes
-    NPMI      high   yes    yes    yes    
-    PPMI      high   no     yes    yes      
-    (P)PMI2   low    yes    no     yes      
-    PMI3      neg    yes    no     yes    
 
 ==================================================================== """
 
@@ -186,32 +193,37 @@ class Raw_freq:
         return ab
 
 class PMI:
-    """ Pointwise Mutual Information: -log p(a,b) > 0 > -inf """
+    """ Pointwise Mutual Information. The score orientation is
+    -log p(a,b) > 0 > -inf """
     @staticmethod
     def score(ab, a, b, cz):
         return _log(ab*cz) - _log(a*b)
 
 class NPMI:
-    """ Normalized PMI: 1 > 0 > -1 """
+    """ Normalized PMI. The score orientation is  +1 > 0 > -1 """
     @staticmethod
     def score(ab, a, b, cz):
         return PMI.score(ab, a, b, cz) / -_log(ab/cz)
 
 class PMI2:
-    """ PMI^2 (fixes the low-frequency bias of PMI and NPMI:
-    0 > log p(a,b) > -inf """
+    """ PMI^2. Fixes the low-frequency bias of PMI and NPMI by squaring
+    the numerator to compensate multiplication done in the denominnator.
+    Scores are oriented as: 0 > log p(a,b) > -inf """
     @staticmethod
     def score(ab, a, b, cz):
         return PMI.score(ab, a, b, cz) - (-_log(ab/cz))
 
 class PMI3:
-    """ PMI^3 (no low-freq bias, favors common bigrams) """
+    """ PMI^3 (no low-freq bias, favors common bigrams). Scores are
+    oriented from 0 > -(k-1)*log p(a,b) > -inf, where the k stands for
+    the power of the numerator, here hardcoded as 3. """
     @staticmethod
     def score(ab, a, b, cz):
         return PMI.score(ab, a, b, cz) - (-(2*_log(ab/cz)))
 
 class PPMI:
-    """ Positive PMI: -log p(a,b) > 0 = 0 """
+    """ Positive PMI. Works as the regular PMI but discards negative
+    scores: -log p(a,b) > 0 = 0 """
     @staticmethod
     def score(ab, a, b, cz):
         return max(PMI.score(ab, a, b, cz), 0)
@@ -219,10 +231,10 @@ class PPMI:
 class PPMI2:
     """ Positive derivative of PMI^2. Shares exaclty the same
     properties but the score orientation is on the positive
-    plane: 1 > 2^log p(a, b) > 0 """
+    plane: 1 > 2^log p(a,b) > 0 """
     @staticmethod
     def score(ab, a, b, cz):
-        return 2**PMI2.score(ab, a, b, cz)
+        return 2 ** PMI2.score(ab, a, b, cz)
 
 
 class Associations:
@@ -230,7 +242,7 @@ class Associations:
     def __init__(self):
         self.scored = []
         self.text = []
-        self.windowsize = 2
+        self.windowsize = None
         self.freq_threshold = 1
         self.symmetry = False    
         self.words = {1: [], 2: []}
@@ -253,7 +265,50 @@ class Associations:
                          'anywords2']:
                 debug.append('%s%s%s' % (k, ' '*(tab-len(k)+1), str(v)))
         return '\n'.join(debug) + '\n'
-        
+
+    def _readfile(self, filename):
+        if self.windowsize is None:
+            print('Window size not defined...')
+            sys.exit()
+
+        self.filename = filename
+        with open(filename, 'r', encoding="utf-8") as data:
+            print('reading %s...' % filename)
+            self.text = [BUFFER]*self.windowsize
+            return data.readlines()
+
+    def read_raw(self, filename):
+        """ Open raw lemmatized input file with one text per line.
+        Add buffer equal to window size after each text to prevent
+        words from different texts being associated. """
+        buffers = 1
+        for line in self._readfile(filename):
+            self.text.extend(line.strip('\n').split(' ')
+                             + [BUFFER]*self.windowsize)
+            buffers += 1
+        self.corpus_size = len(self.text) - (buffers * self.windowsize)
+
+    def read_vrt(self, filename, lemmapos, delimiter=''):
+        """ Open VRT file. Takes arguments ´lemmapos´ (int), which
+        indicates the word attribute count for lemmas, i.e. 1 would
+        be the first attribute, as the 0th position is reserved for
+        the word. Argument ´delimiter´ splits the text, e.g. by its
+        ´sentence´, ´paragraph´ or ´text´ element and disallows
+        collocations being recognized if the delimiter is found
+        between them. """
+        delimiter = '</{}>'.format(re.sub('\W', '', delimiter))
+        buffers = 1
+        for line in self._readfile(filename):
+            l = line.strip('\n')
+            if l == delimiter:
+                self.text.extend([BUFFER]*self.windowsize)
+                buffers += 1
+            if not l.startswith('<'):
+                self.text.append(l.split('\t')[lemmapos])
+            else:
+                pass
+        self.corpus_size = len(self.text) - (buffers * self.windowsize)
+            
     def set_constraints(self, **kwargs):
         """ Set constraints. Separate regular expressions from the
         string variables, as string comparison is significantly faster
@@ -281,22 +336,6 @@ class Associations:
         self.anywords1 = any([self.words[1], self.regex_words[1]])
         self.anywords2 = any([self.words[2], self.regex_words[2]])
         
-    def read_file(self, filename):
-        """ Open lemmatized input file with one text per line.
-        Add buffer equal to window size after each text to prevent
-        words from different texts being associated. """
-        with open(filename, 'r', encoding="utf-8") as data:
-            print('reading %s...' % filename)
-            self.text = [BUFFER]*self.windowsize
-            buffers = 1
-            for line in data.readlines():
-                self.text.extend(line.strip('\n').split(' ')
-                                 + [BUFFER]*self.windowsize)
-                buffers += 1
-
-        self.filename = filename
-        self.corpus_size = len(self.text) - (buffers * self.windowsize)
-        
     def _trim_float(self, number):
         return float('{0:.4f}'.format(number))
 
@@ -318,9 +357,12 @@ class Associations:
             distance = self.windowsize
         return distance
 
-    def score_bigrams(self, filename, measure):
+    def score_bigrams(self, measure):
         """ Main function for bigram scoring """
-        self.read_file(filename)
+        
+        if not self.text:
+            print('Input text not loaded...')
+            sys.exit()
         
         def scale(bf, distance):
             """ Scale bigram frequency with window size. Makes the
@@ -471,14 +513,16 @@ def demo():
     st = time.time()
     a = Associations()
     a.set_constraints(windowsize = 10,
-                      freq_threshold = 20,
+                      freq_threshold = 10,
                       symmetry=False,
                       track_distance=False,
                       distance_scaling=False,
-                      words1=['kakku', 'ezzu'])
-    
-    a.score_bigrams('neoA', PMI)
-    print(a)
+                      words1=['kakku'])
+
+    #a.read_vrt('testi.vrt', 1, '<sentence>')
+    a.read_raw('neoA')
+    a.score_bigrams(PPMI2)
+    #print(a)
     et = time.time() - st
     print('time', et)
 
