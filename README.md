@@ -10,9 +10,9 @@ Features:
 - Symmetric and asymmetric windows
 - Word distance tracking
 - Regex support for word/stopword filters
-- High performance algorithms
+- High performance algorithms for score calculation and n-gram finding
+- JSON exporting/importing
 
 Todo:
-- json support
 - neater output formats, csv, xlxs, json; score tables, matrices etc.
 - more measures
