@@ -6,6 +6,7 @@ import sys
 import time
 import itertools
 import math
+import json
 import re
 try:
     from dictionary import dct as akkadian_dict
@@ -132,35 +133,36 @@ Constraints and properties may be set by using the following kwargs:
                     distance is taken into account.
 
                     NOTE: Slows bigram counting 2 or 3 times depending
-                    on the window size.
+                    on the window size. Using large (>15) symmetric
+                    window and distance tracking takes lots of time.
 
  ´distance_scaling´ Scale scores by using mutual distances instead of
                     window size.
 
 
 ========================================================================
-Reading files ==========================================================
+Associations.read_XXXXX(filename) ======================================
 ========================================================================
 
-Associations.read_raw(filename) ----------------------------------------
+Associations.read_raw(filename)
 
-Takes a lemmatized raw text file as an input. For example, a text
-"Monkeys ate coconuts and the sun was shining" should be represented as:
+  Takes a lemmatized raw text file as an input. For example, a text
+  "Monkeys ate coconuts and the sun was shining" would be:
 
      monkey eat coconut and the sun be shine
 
-Bigrams are NOT allowed to span from line to another. Thus, if you want
-to disallow, collocations spanning from sentence to another, the text
-should contain one sentence per line.
+  Bigrams are NOT allowed to span from line to another. Thus, if you
+  want to disallow, collocations spanning from sentence to another, the
+  text should contain one sentence per line.
 
 
-Associations.read_vrt(filename, word_attribute, delimiter) -------------
+Associations.read_vrt(filename, word_attribute, delimiter)
 
-Reads VRT files. You must define the ´word_attribute´ index (int), from
-which the lemmas can be found. ´delimiter´ is used to set the boundary,
-over which collocates are not allowed to span. Normally this is either
-´<text>´, ´<paragraph>´ or ´<sentence>´, but may as well be ´<clause>´
-or ´<line>´, too, if such are available in the file.
+  Reads VRT files. You must define the ´word_attribute´ index (int),
+  from which the lemmas can be found. ´delimiter´ is used to set the
+  boundary, over which collocates are not allowed to span. Normally this
+  is either ´<text>´, ´<paragraph>´ or ´<sentence>´, but may as well be
+  ´<clause>´ or ´<line>´, too, if such are available in the file.
 
 NOTE: Window size must always be specified before reading the file!
 
@@ -178,6 +180,42 @@ Argument ´measure´ must be one of the following:
     PPMI            Positive PMI. As PMI but discards negative scores.
     PPMI2           Positive PMI^2 (Role & Nadif 2011)
 
+
+========================================================================
+Associations.export_json(filename), Associations.import_json(filename) =
+========================================================================
+
+Association scores can be exported as a JSON dump by using method
+Associations.export_json(filename). This file can be later imported to
+produce different outputs without need to recalculate the scores.
+
+When a JSON is imported, the results can be filtered by using the
+set_constraints(). Naturally, changing the window size won't have any
+effect as the scores have been calculated by using a certain window,
+but the results can be filtered with frequency threshold, stop words and
+new words of interest.
+
+Thus, a score table that might take 45 seconds to compute, can be
+re-searched with new parameters in a fraction of that time.
+
+
+========================================================================
+Output formats =========================================================
+========================================================================
+
+Associations.print_matrix(value, scoretable)
+
+ ´value´           Value that will be used in the matrix: ´score´,
+                   bigram ´frequency´ or ´distance´.
+
+ ´scoretable´      Imported JSON score table. Use this in case you have
+                   previously exported your scores. If you import a
+                   scoretable, you must also use set_constraints()
+                   in order to limit the search.
+
+                   NOTE: matrices should only be used with a small
+                   pre-defined set of words of interest.
+
 ==================================================================== """
 
 def _log(n):
@@ -186,12 +224,6 @@ def _log(n):
     else:
         return math.log(n, LOGBASE)
     
-class Raw_freq:
-    """ Score bigrams by their frequency """
-    @staticmethod
-    def score(ab, a, b, cz):
-        return ab
-
 class PMI:
     """ Pointwise Mutual Information. The score orientation is
     -log p(a,b) > 0 > -inf """
@@ -240,8 +272,12 @@ class PPMI2:
 class Associations:
 
     def __init__(self):
-        self.scored = []
         self.text = []
+        self.scored = {'freqs': {},
+                       'translations': {},
+                       'collocations': {},
+                       'words1': [],
+                       'words2': []}
         self.windowsize = None
         self.freq_threshold = 1
         self.symmetry = False    
@@ -268,12 +304,12 @@ class Associations:
 
     def _readfile(self, filename):
         if self.windowsize is None:
-            print('Window size not defined...')
+            print('Window size not defined ...')
             sys.exit()
 
         self.filename = filename
         with open(filename, 'r', encoding="utf-8") as data:
-            print('reading %s...' % filename)
+            print('reading %s ...' % filename)
             self.text = [BUFFER]*self.windowsize
             return data.readlines()
 
@@ -308,6 +344,18 @@ class Associations:
             else:
                 pass
         self.corpus_size = len(self.text) - (buffers * self.windowsize)
+
+    def import_json(self, filename):
+        """ Load lookup table from JSON """
+        print('reading %s ...' % filename)
+        with open(filename) as data:
+            return json.load(data)
+        
+    def export_json(self, filename):
+        """ Save lookup table as JSON """
+        print('writing %s ...' % filename)
+        with open(filename, 'w', encoding="utf-8") as data:
+            json.dump(self.scored, data)
             
     def set_constraints(self, **kwargs):
         """ Set constraints. Separate regular expressions from the
@@ -337,7 +385,12 @@ class Associations:
         self.anywords2 = any([self.words[2], self.regex_words[2]])
         
     def _trim_float(self, number):
-        return float('{0:.4f}'.format(number))
+        if number == '':
+            return number
+        elif isinstance(number, int):
+            return number
+        else:
+            return float('{0:.4f}'.format(number))
 
     def get_translation(self, word):
         """ Get translation from dictionary """
@@ -357,11 +410,54 @@ class Associations:
             distance = self.windowsize
         return distance
 
+    def match_regex(self, words, regexes):
+        """ Matches a list of regexes to list of words """
+        return any([re.match(r, w) for r in regexes for w in words])
+
+    def is_stopword(self, *words):
+        """ Compare words with stop word list and regexes. Return
+        True if not in the list """
+        if not self.regex_stopwords:
+            return any(w in self.stopwords for w in words)
+        else:
+            return self.match_regex(words, self.regex_stopwords)\
+                   or any(w in self.stopwords for w in words)
+
+    def is_wordofinterest(self, word, index):
+        """ Compare words with the list of words of interest.
+        Return True if in the list """
+        if not self.regex_words[index]:
+            return word in self.words[index]
+        else:
+            return self.match_regex([word], self.regex_words[index])\
+                   or word in self.words[index]
+    
+    def is_valid(self, w1, w2, freq):
+        """ Validate bigram. Discard stopwords and those which
+        do not match with the word of interest lists """
+        if freq >= self.freq_threshold:    
+            if not self.anywords:
+                return not self.is_stopword(w1, w2)
+            elif self.anywords and self.anywords2:
+                return self.is_wordofinterest(w1, 1) and\
+                       self.is_wordofinterest(w2, 2)
+            else:
+                if self.anywords1:
+                    return self.is_wordofinterest(w1, 1) and\
+                           not self.is_stopword(w2)
+                if self.anywords2:
+                    return self.is_wordofinterest(w2, 2) and\
+                           not self.is_stopword(w1)
+                else:
+                    return False
+        else:
+            return False
+
     def score_bigrams(self, measure):
         """ Main function for bigram scoring """
         
         if not self.text:
-            print('Input text not loaded...')
+            print('Input text not loaded.')
             sys.exit()
         
         def scale(bf, distance):
@@ -374,49 +470,9 @@ class Associations:
             else:
                 return bf
 
-        def match_regex(words, regexes):
-            """ Matches a list of regexes to list of words """
-            return any([re.match(r, w) for r in regexes for w in words])
-
-        def is_stopword(*words):
-            """ Compare words with stop word list and regexes. Return
-            True if not in the list """
-            if not self.regex_stopwords:
-                return any(w in self.stopwords for w in words)
-            else:
-                return match_regex(words, self.regex_stopwords)\
-                       or any(w in self.stopwords for w in words)
-
-        def is_wordofinterest(word, index):
-            """ Compare words with the list of words of interest.
-            Return True if in the list """
-            if not self.regex_words[index]:
-                return word in self.words[index]
-            else:
-                return match_regex([word], self.regex_words[index])\
-                       or word in self.words[index]
-        
-        def is_valid(w1, w2, freq):
-            """ Validate bigram. Discard stopwords and those which
-            do not match with the word of interest lists """
-            if freq >= self.freq_threshold:    
-                if not self.anywords:
-                    return not is_stopword(w1, w2)
-                elif self.anywords and self.anywords2:
-                    return is_wordofinterest(w1, 1) and is_wordofinterest(w2, 2)
-                else:
-                    if self.anywords1:
-                        return is_wordofinterest(w1, 1) and not is_stopword(w2)
-                    if self.anywords2:
-                        return is_wordofinterest(w2, 2) and not is_stopword(w1)
-                    else:
-                        return False
-            else:
-                return False
-
         def count_bigrams_symmetric():
             """ Calculate bigrams within each symmetric window """
-            print('counting bigrams...')
+            print('counting bigrams ...')
             wz = self.windowsize-1
             for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
                 for bigram in itertools.product([w[wz]], w[0:wz]+w[wz+1:]):
@@ -434,7 +490,7 @@ class Associations:
                 chain[1::2] = w2
                 return chain
 
-            print('counting bigrams...')
+            print('counting bigrams ...')
             wz = self.windowsize-1
             for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
                 left = list(w[0:wz])
@@ -453,7 +509,7 @@ class Associations:
 
         def count_bigrams_forward():
             """ Calculate bigrams within each forward-looking window """
-            print('counting bigrams...')
+            print('counting bigrams ...')
             for w in zip(*[self.text[i:] for i in range(self.windowsize)]):
                 for bigram in itertools.product([w[0]], w[1:]):
                     yield bigram
@@ -463,7 +519,7 @@ class Associations:
             calculate also average distance between words. Distance
             tracking is not included into count_bigrams_forward()
             for better efficiency """
-            print('counting bigrams...')
+            print('counting bigrams ...')
             for w in zip(*[self.text[i:] for i in range(self.windowsize)]):
                 bigrams = enumerate(itertools.product([w[0]], w[1:]))
                 for bigram in bigrams:
@@ -488,41 +544,126 @@ class Associations:
             else:
                 bigram_freqs = Counter(count_bigrams_forward())
 
-        """ Score bigrams by given measure """
+        """ Score bigrams by given measure. Produces a lookup dictionary
+        in the following structure:
+
+        ´collocations´
+         | 
+         +--´word 1´
+         |    |  
+         |    +-- ´collocate 1 for word 1´
+         |    |     |
+         |    |     +-- ´bigram freq´  (int)
+         |    |     +-- ´word freqs´   [w1, w2] (int)
+         |    |     +-- ´translations´ [w1, w2] (str)
+         |    |     +-- ´score´        (float)
+         |    |     +-- ´distance´     (float)
+         |    |
+         |    +-- ´collocate 2 for word 1´
+         |    |     |
+
+        Translations and frequencies are stored under ´translations´
+        and ´freqs´, which include keys for each word/bigram.
+        
+        """
+        
         word_freqs = Counter(self.text)
-        print('calculating scores...')
+        w1list, w2list = [], [] # containers for found words of interest
+        print('calculating scores ...')        
         for bigram in bigram_freqs.keys():
             w1, w2 = bigram[0], bigram[1]
-            if is_valid(w1, w2, bigram_freqs[bigram]):
-                translation = self.get_translation(w2)
+            if self.is_valid(w1, w2, bigram_freqs[bigram]):
                 distance = self.get_distance(bigram)
                 freq_w1 = word_freqs[w1]
                 freq_w2 = word_freqs[w2]
                 score = measure.score(scale(bigram_freqs[bigram], distance),
                                       freq_w1, freq_w2, self.corpus_size)
-                self.scored.append((bigram, translation, bigram_freqs[bigram],
-                            freq_w1, freq_w2, self._trim_float(score),
-                            distance))
+                data = {'score': score,
+                        'distance': distance,
+                        'frequency': bigram_freqs[bigram]}
+                self.scored['translations'][w1] = self.get_translation(w1)
+                self.scored['translations'][w2] = self.get_translation(w2)
+                self.scored['freqs'][w1] = freq_w1
+                self.scored['freqs'][w2] = freq_w2
+                w1list.append(w1)
+                w2list.append(w2)
+                try:
+                    self.scored['collocations'][w1][w2] = data
+                except KeyError:
+                    self.scored['collocations'][w1] = {}
+                    self.scored['collocations'][w1][w2] = data
+                finally:
+                    pass
 
-        scored = sorted(self.scored)
+        """ Store words of interest for JSON """
+        self.scored['words1'] = list(set(w1list))
+        self.scored['words2'] = list(set(w2list))
 
-        for x in scored:
-            print(x)
+    def _filter_json(self, words, index):
+        """ Validate and return words of interest """
+        return [w for w in sorted(words) if self.is_wordofinterest(w, index)\
+                and not self.is_stopword(w)]
+
+    def print_matrix(self, value, table=None):
+        print('generating {} matrix ...'.format(value))
+        """ Make a collocation matrix of two sets of words of
+        interest. Argument ´value´ must be ´score´, ´frequency´
+        or ´distance´. """
+        
+        """ Use self.scored if imported JSON is not given.
+        Apply word filters if JSON is loaded """
+        if table is None:
+            from_json = True
+            table = self.scored
+            words1 = sorted(table['words1'])
+            words2 = sorted(table['words2'])
+        else:
+            from_json = True
+            words1 = self._filter_json(table['words1'], 1)
+            words2 = self._filter_json(table['words2'], 2)
+
+        rows = [[value.upper() + ' MATRIX W1 ->'] + words2]
+        for w1 in words1:
+            row = []
+            for w2 in words2:
+                score = ''
+                if w1 in table['collocations'].keys():
+                    if w2 in table['collocations'][w1].keys():
+                        bigram = table['collocations'][w1][w2]
+                        bigram_freq = bigram['frequency']
+                        if from_json:
+                            if bigram_freq > self.freq_threshold:
+                                score = bigram[value]
+                        else:
+                            score = bigram[value]
+                row.append(self._trim_float(score))
+            if any(row):
+                rows.append([w1] + row)
+
+        """ Rotate matrix to clean empty columns """
+        for r in [row for row in zip(*rows) if any(row[1:])]:
+            print('\t'.join([str(m) for m in r]))
+
 
 def demo():
     st = time.time()
+    
+    # Initialize Associations
     a = Associations()
-    a.set_constraints(windowsize = 10,
-                      freq_threshold = 10,
-                      symmetry=False,
+    a.set_constraints(windowsize = 15,
+                      freq_threshold = 20,
+                      symmetry=True,
                       track_distance=False,
                       distance_scaling=False,
-                      words1=['kakku'])
+                      words1=[re.compile('E.+?')],
+                      words2=[re.compile('[A-Z].+?')])
 
     #a.read_vrt('testi.vrt', 1, '<sentence>')
     a.read_raw('neoA')
-    a.score_bigrams(PPMI2)
-    #print(a)
+    a.score_bigrams(PMI)
+    a.export_json('kokeilu.json')
+    #b = a.import_json('kokeilu.json')
+    a.print_matrix('score')
     et = time.time() - st
     print('time', et)
 
