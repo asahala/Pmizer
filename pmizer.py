@@ -21,6 +21,7 @@ WINDOW_SCALING = False    # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
 LACUNA = '_'              # Symbol for lacunae in cuneiform languages
 BUFFER = '<BUFFER>'       # Buffer symbol; added after each line
+DECIMAL = ','
 
 """ ====================================================================
 Association measures - Aleksi Sahala 2018 - University of Helsinki =====
@@ -298,11 +299,12 @@ class Associations:
         for k, v in self.__dict__.items():
             if k not in ['scored', 'text', 'regex_stopwords',
                          'regex_words', 'distances', 'anywords', 'anywords1',
-                         'anywords2']:
+                         'anywords2', 'wordfreqs']:
                 debug.append('%s%s%s' % (k, ' '*(tab-len(k)+1), str(v)))
         return '\n'.join(debug) + '\n'
 
     def _readfile(self, filename):
+        """ General file reader """
         if self.windowsize is None:
             print('Window size not defined ...')
             sys.exit()
@@ -323,6 +325,8 @@ class Associations:
                              + [BUFFER]*self.windowsize)
             buffers += 1
         self.corpus_size = len(self.text) - (buffers * self.windowsize)
+        self.word_freqs = Counter(self.text)
+        print(self.corpus_size)
 
     def read_vrt(self, filename, lemmapos, delimiter=''):
         """ Open VRT file. Takes arguments ´lemmapos´ (int), which
@@ -344,6 +348,7 @@ class Associations:
             else:
                 pass
         self.corpus_size = len(self.text) - (buffers * self.windowsize)
+        self.word_freqs = Counter(self.text)
 
     def import_json(self, filename):
         """ Load lookup table from JSON """
@@ -368,7 +373,7 @@ class Associations:
                         self.stopwords.append(stopword)
                     else:
                         self.regex_stopwords.append(stopword)
-            if key in ['words1', 'words2']:
+            elif key in ['words1', 'words2']:
                 index = int(key[-1])
                 for word in value:
                     if isinstance(word, str):
@@ -382,7 +387,7 @@ class Associations:
         self.anywords = any([self.words[1], self.words[2],
                          self.regex_words[1], self.regex_words[2]])
         self.anywords1 = any([self.words[1], self.regex_words[1]])
-        self.anywords2 = any([self.words[2], self.regex_words[2]])
+        self.anywords2 = any([self.words[2], self.regex_words[2]])      
         
     def _trim_float(self, number):
         if number == '':
@@ -407,7 +412,7 @@ class Associations:
             distance = self._trim_float(sum(self.distances[bigram])
                                     / len(self.distances[bigram]))
         else:
-            distance = self.windowsize
+            distance = ''
         return distance
 
     def match_regex(self, words, regexes):
@@ -454,7 +459,7 @@ class Associations:
             return False
 
     def score_bigrams(self, measure):
-        """ Main function for bigram scoring """
+        """ Score bigrams by using class ´measure´ """
         
         if not self.text:
             print('Input text not loaded.')
@@ -567,19 +572,18 @@ class Associations:
         
         """
         
-        word_freqs = Counter(self.text)
+        
         w1list, w2list = [], [] # containers for found words of interest
         print('calculating scores ...')        
         for bigram in bigram_freqs.keys():
             w1, w2 = bigram[0], bigram[1]
             if self.is_valid(w1, w2, bigram_freqs[bigram]):
                 distance = self.get_distance(bigram)
-                freq_w1 = word_freqs[w1]
-                freq_w2 = word_freqs[w2]
+                freq_w1 = self.word_freqs[w1]
+                freq_w2 = self.word_freqs[w2]
                 score = measure.score(scale(bigram_freqs[bigram], distance),
                                       freq_w1, freq_w2, self.corpus_size)
-                data = {'score': score,
-                        'distance': distance,
+                data = {'score': score, 'distance': distance,
                         'frequency': bigram_freqs[bigram]}
                 self.scored['translations'][w1] = self.get_translation(w1)
                 self.scored['translations'][w2] = self.get_translation(w2)
@@ -599,19 +603,33 @@ class Associations:
         self.scored['words1'] = list(set(w1list))
         self.scored['words2'] = list(set(w2list))
 
+    def _stringify(self, array):
+        """ Convert all values in table into strings and
+        localize decimal markers. """
+        def _format_decimal(item):
+            if isinstance(item, float):
+                return str(item).replace('.', DECIMAL)
+            else:
+                return str(item)
+        return [_format_decimal(x) for x in array]
+
+    def _sort_by_index(self, table, indices):
+        """ Sort table by given indices, i.e. [0, 4] sorts
+        the table by 1st and 5th values """
+        for row in table:
+            k = table.index(row)
+            for i in indices:
+                j = indices.index(i)
+                table[k].insert(j, row[i])
+        return [y[len(indices):] for y in sorted(table, reverse=True)]
+
     def _filter_json(self, words, index):
         """ Validate and return words of interest """
         return [w for w in sorted(words) if self.is_wordofinterest(w, index)\
                 and not self.is_stopword(w)]
 
-    def print_matrix(self, value, table=None):
-        print('generating {} matrix ...'.format(value))
-        """ Make a collocation matrix of two sets of words of
-        interest. Argument ´value´ must be ´score´, ´frequency´
-        or ´distance´. """
-        
-        """ Use self.scored if imported JSON is not given.
-        Apply word filters if JSON is loaded """
+    def _check_table(self, table):
+        """ Check if table is imported from JSON """
         if table is None:
             from_json = True
             table = self.scored
@@ -621,8 +639,23 @@ class Associations:
             from_json = True
             words1 = self._filter_json(table['words1'], 1)
             words2 = self._filter_json(table['words2'], 2)
+        return table, from_json, words1, words2
+        
+    def print_matrix(self, value, table=None):
+        """ Make a collocation matrix of two sets of words of
+        interest. Argument ´value´ must be ´score´, ´frequency´
+        or ´distance´. """
+        
+        """ Use self.scored if imported JSON is not given.
+        Apply word filters if JSON is loaded """
 
-        rows = [[value.upper() + ' MATRIX W1 ->'] + words2]
+        print('generating {} matrix ...'.format(value))
+
+        table, from_json, words1, words2 = self._check_table(table)
+        rows = [[value.upper() + ' MATRIX W1 ->']\
+                + ['{}'.format(w + ' ' + table['translations'][w])\
+                   for w in words2]]
+        
         for w1 in words1:
             row = []
             for w2 in words2:
@@ -644,26 +677,85 @@ class Associations:
         for r in [row for row in zip(*rows) if any(row[1:])]:
             print('\t'.join([str(m) for m in r]))
 
+    def print_scores(self, limit=10000, table=None):
+        print('generating score table ...')
+        #table, from_json, words1, words2 = self._check_table(table)
+        if table is None:
+            table = self.scored
+        else:
+            pass
 
+        rows = []
+        for w1 in table['collocations'].keys():
+            for w2 in table['collocations'][w1].keys():
+                bigram = table['collocations'][w1][w2]
+                freqs = table['freqs']
+                rows.append([w1, table['translations'][w1],
+                             w2, table['translations'][w2],
+                             freqs[w1], freqs[w2],
+                             bigram['frequency'],
+                             float(self._trim_float(bigram['score'])),
+                             bigram['distance']])
+
+        lastword = ''
+        for line in self._sort_by_index(rows, [0, -2]):
+            if lastword != line[0]:
+                i = 0
+            if i < limit:
+                print('\t'.join(self._stringify(line)))
+            lastword = line[0]
+            i += 1
+
+
+    def get_words(self, translations, indices=[0]):
+        """ Search words and their frequencies by their translation
+        from the loaded text. ´translations´ may be a string or list
+        of translations or regular expression. """          
+        if not self.text:
+            print('text not loaded')
+            sys.exit()
+        elif isinstance(translations, list):
+            translations = list(translations)
+
+        freqlist = []
+        def _print_freqs(k, v):
+            if k in self.word_freqs.keys():
+                freqlist.append([k, v, self.word_freqs[k]])
+
+        for k, v in akkadian_dict.items():
+            for t in translations:
+                if isinstance(t, str):
+                    if t == v:
+                        _print_freqs(k, v)
+                else:
+                    if re.match(t, v):
+                        _print_freqs(k, v)
+                    
+        for item in self._sort_by_index(freqlist, indices):
+            print('\t'.join(self._stringify(item)))
+            
 def demo():
     st = time.time()
     
     # Initialize Associations
     a = Associations()
-    a.set_constraints(windowsize = 15,
-                      freq_threshold = 20,
+    a.set_constraints(windowsize = 10,
+                      freq_threshold = 5,
                       symmetry=True,
                       track_distance=False,
                       distance_scaling=False,
-                      words1=[re.compile('E.+?')],
-                      words2=[re.compile('[A-Z].+?')])
+                      words1=['šagāšu'],
+                      stopwords=[re.compile('^[A-Z].+')])
 
     #a.read_vrt('testi.vrt', 1, '<sentence>')
-    a.read_raw('neoA')
-    a.score_bigrams(PMI)
+    a.read_raw('Oracc')
+
+    #a.get_words([re.compile('(kill|execute|murder)$')], [-1])
+    a.score_bigrams(NPMI)
     a.export_json('kokeilu.json')
     #b = a.import_json('kokeilu.json')
-    a.print_matrix('score')
+    #a.print_matrix('score', b)
+    a.print_scores(15)
     et = time.time() - st
     print('time', et)
 
