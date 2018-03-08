@@ -10,10 +10,10 @@ import math
 import json
 import re
 try:
-    from dictionary import dct as akkadian_dict
+    from dictionary import dct
 except ImportError:
     print('dictionary.py not found!')
-    akkadian_dict = {}
+    dct = {}
 
 
 __version__ = "2018-03-08"
@@ -91,19 +91,36 @@ least in the context of royal inscriptions:
         the SEAS in order to enforce the Assyrian KINGSHIP.
       - great weapons is granted by the GOD ASHUR
 
+========================================================================
+Quick guide ============================================================
+========================================================================
+
+The following lines of code will generate the top-20 NPMI results using
+a forward-looking window of 7, with a minimum bigram frequency of 10.
+
+1) Initialize Associations()        a = Associations()
+2) Set window properties:           a.window(size=7)
+3) Open your corpus file            a.read_raw(yourfile.txt)
+4) Set constraints (optional)       a.set_constraints(freq_threshold=10)
+5) Calculate scores                 a.score_bigrams(NPMI)
+6) Make score table for the top-20  a.print_scores(20)
+
+See below for more detailed instructions.
 
 ========================================================================
 Associations.set_window(size, symmetry) ================================
 ========================================================================
 
- ´windowsize´       (int) collocational window that defines the
+ ´size´             (int) Collocational window that defines the
                     maximum mutual distance of the elements of a non-
-                    contiguous bigram. Minimum distance is 2, which means
-                    that the words are next to each another (contiguous).
+                    contiguous bigram. Minimum distance is 2, which
+                    means that the words are expected to be next to each
+                    other.
 
  ´symmetry´         (bool) Use symmetric window. If not used, the window
                     is forward-looking. For example, with a window size
-                    of 3 and w4 being our word of interest:
+                    of 3 and w4 being our word of interest, the windows
+                    are calculated as:
 
                                  w1 w2 w3 w4 w5 w6 w7
                     symmetric       +--+--^--+--+
@@ -114,25 +131,25 @@ Associations.set_window(size, symmetry) ================================
 Associations.read_XXXXX(filename) ======================================
 ========================================================================
 
-Associations.read_raw(filename)
+Associations.read_raw(filename) ----------------------------------------
 
-  Takes a lemmatized raw text file as an input. For example, a text
+  Takes a lemmatized raw text file as input. For example, a text
   "Monkeys ate coconuts and the sun was shining" would be:
 
      monkey eat coconut and the sun be shine
 
   Bigrams are NOT allowed to span from line to another. Thus, if you
-  want to disallow, collocations spanning from sentence to another, the
+  want to disallow bigrams spanning from sentence to another, the
   text should contain one sentence per line.
 
 
-Associations.read_vrt(filename, word_attribute, delimiter)
+Associations.read_vrt(filename, word_attribute, delimiter) -------------
 
   Reads VRT files. You must define the ´word_attribute´ index (int),
   from which the lemmas can be found. ´delimiter´ is used to set the
-  boundary, over which collocates are not allowed to span. Normally this
-  is either ´<text>´, ´<paragraph>´ or ´<sentence>´, but may as well be
-  ´<clause>´ or ´<line>´, too, if such are available in the file.
+  boundary, over which the bigrams are not allowed to span. Normally
+  this is either ´<text>´, ´<paragraph>´ or ´<sentence>´, but may as
+  well be ´<clause>´ or ´<line>´, if such are available in the file.
 
 NOTE: Window size must always be specified before reading the file!
 
@@ -143,13 +160,17 @@ Associations.set_constraints(**kwargs) =================================
 
 Constraints and properties may be set by using the following kwargs:
 
- ´freq_threshold´   (int) minimum allowed bigram frequency.
+ ´freq_threshold´   (int) minimum allowed bigram frequency. This can be
+                    used to counter the low-frequency bias of certain
+                    PMI variants.
 
- ´words1´           (list) words of interest: Bigram(word1, word2)
- ´words2´           Words of interest may also be expressed as compiled
+ ´words1´ &         (list) words of interest, in other words, the white-
+ ´words2´           list of words, which are allowed to exist in the
+                    bigram (word1, word2) or (word1 ... word2).
+                    Words of interest may also be expressed as compiled
                     regular expressions. See exampes in ´stopwords´.
 
- ´stopwords´        (list) discard uninteresting words like
+ ´stopwords´        (list) the black list of uninteresting words like
                     prepositions, numbers etc. May be expressed as
                     compiled regular expressions. For example
                     [re.compile('\d+?'), re.compile('^[A-ZŠṢṬĀĒĪŪ].+')]
@@ -157,34 +178,27 @@ Constraints and properties may be set by using the following kwargs:
                     as all words that begin with a capital letter.
 
                     NOTE: It may be wise to express series of regular
-                    expressions as disjunctions (regex1|...|regexn) as it
-                    makes the comparison significantly faster, e.g. 
+                    expressions as disjunctions (regex1|...|regexn) as
+                    it makes the matching significantly faster, e.g. 
                     [re.compile('^(\d+?|[A-ZŠṢṬĀĒĪŪ].+)'].
 
- ´track_distance´   (bool) calculate average distance between the words
-                    of the bigram. If the same bigram can be found
-                    several times within the window, only the closest
-                    distance is taken into account.
+                    Stopwords and words of interest may also be defined
+                    by their translations, POS tag etc. See the section
+                    ´Using dictionaries´ for more info.
 
-                    NOTE: Slows bigram counting 2 or 3 times depending
-                    on the window size. Using large (>15) symmetric
-                    window and distance tracking takes lots of time.
+ ´track_distance´   (bool) calculate and store the average minimum
+                    distance between the words of the bigram. If the
+                    same bigram can be found several times within the
+                    window, only the closest distance is taken into
+                    account.
+
+                    NOTE: Slows bigram counting 2-3 times depending
+                    on the window size. With large symmetric windows
+                    this can take several minutes or even hours.
 
  ´distance_scaling´ Scale scores by using mutual distances instead of
-                    window size.
-
-
-More advanced ways to define words of interest and stopwords:
-
-Words of interest or stopwords can also be defined by their translations
-if your corpus has a dictionary file available. Translations can be
-matched with strings and regular expressions. For example:
-
-  wis = has_translation(['enemy', 'opponent', 'rival'])
-
-will find all the Akkadian words that have any of these translations.
-The result can be passed to the set_constraints() as any stopword or
-word of interest kwarg.
+                    window size. This will give a penalty to the bigrams
+                    according to its words mutual distance.
 
 
 ========================================================================
@@ -207,11 +221,11 @@ Associations.export_json(filename), Associations.import_json(filename) =
 
 Association scores can be exported as a JSON dump by using method
 Associations.export_json(filename). This file can be later imported to
-produce different outputs without need to recalculate the scores.
+produce different outputs without recalculating the scores.
 
 When a JSON is imported, the results can be filtered by using the
 set_constraints(). Naturally, changing the window size won't have any
-effect as the scores have been calculated by using a certain window,
+effect as the scores have been calculated by using a certain window size,
 but the results can be filtered with frequency threshold, stop words and
 new words of interest.
 
@@ -223,20 +237,84 @@ re-searched with new parameters in a fraction of that time.
 Output formats =========================================================
 ========================================================================
 
-Associations.print_matrix(value, scoretable)
+Associations.print_scores(limit, scoretable) ---------------------------
+
+ DESCRIPTION       Generates a score table that includes word and bigram
+                   frequencies and the association measures.
+
+ ´limit´           (int) Set the minimum rank that will be printed in
+                   your score table. E.g. a limit of 20 will print only
+                   the top-20 scores.
+
+ ´scoretable´      Imported JSON score table. Use this in case you have
+                   previously exported your scores. Use the method
+                   set_constraints() to re-adjust your minimum threshold,
+                   words of interest and stopwords. Naturally, if you
+                   have used a freq. thresholds of 15 in your scores,
+                   you can only re-adjust the value over 15.
+
+
+Associations.print_matrix(value, scoretable) ---------------------------
+
+ DESCRIPTION       Generates a matrix from two sets of words of
+                   interest. NOTE: matrices should only be used with a
+                   small pre-defined set of words of interest.
 
  ´value´           Value that will be used in the matrix: ´score´,
                    bigram ´frequency´ or ´distance´.
 
- ´scoretable´      Imported JSON score table. Use this in case you have
-                   previously exported your scores. If you import a
-                   scoretable, you must also use set_constraints()
-                   in order to limit the search.
+ ´scoretable´      As above.
 
-                   NOTE: matrices should only be used with a small
-                   pre-defined set of words of interest.
+
+========================================================================
+Using dictionaries and/or POS-tagging ==================================
+========================================================================
+
+If you are processing a foreign language and want to have translations
+in your score tables, you may import a dictionary structured as
+
+   {´lemma´: ´translation´, ...}
+
+This dictionary should be saved as a Python file and imported as ´dct´.
+Dictionaries can be used to define your words of interest and stopwords
+by their translations. Translations can be matched by using strings
+or compiled regular expressions. For example:
+
+  wis = has_translation(['enemy', 'opponent', 'rival'])
+
+will find all the Akkadian words that have any of these translations.
+The result can be passed to the set_constraints() like any list of
+stopwords or words of interest.
+
+The dictionary doesn't necessarily have to contain translations, but
+they may as well be POS-tags or whatever you may find useful. However,
+it may be more useful to suffix the POS tags after the lemmas and use
+regular expressions to filter them, e.g. dog_N, cat_N, eat_V.
+
+Dictionary searc methods are:
+
+
+get_freqs_by_translation(translations, sort_by) ------------------------
+
+  DESCRIPTION        This method will return a frequency list of words
+                     by their translation in your corpus.
+
+  ´translations´     (list) A list of translations or compiled regular
+                     expressions.
+
+  ´sort_by´          (int) Sort index.
+  
+
+has_translation(translations) ------------------------------------------
+
+  DESCRIPTION        This method will return a list of lemmas that match
+                     the given translations. This list can be passed
+                     to set_constraints() as described above.
+
+  ´translations´     As above.
 
 ==================================================================== """
+
 
 def _log(n):
     if LOGBASE is None:
@@ -442,7 +520,7 @@ class Associations:
     def get_translation(self, word):
         """ Get translation from dictionary """
         try:
-            translation = '[{}]'.format(akkadian_dict[word])
+            translation = '[{}]'.format(dct[word])
         except:
             translation = '[?]'
         return translation
@@ -531,9 +609,9 @@ class Associations:
             track distances. """
 
             def chain(w1, w2):
-                """ Make zip-chain from two lists.
-                [a, b], [c, d] -> [a, c, b, d] """
-                chain = [' ']*len(w1+w2)
+                """ Make zip-chain (or chain-convolution) from two
+                lists: [a, b], [c, d] -> [a, c, b, d] """
+                chain = [' '] * len(w1+w2)
                 chain[::2] = w1
                 chain[1::2] = w2
                 return chain
@@ -766,7 +844,7 @@ class Associations:
             if k in self.word_freqs.keys():
                 freqlist.append([k, '[%s]' % v, self.word_freqs[k]])
 
-        for k, v in akkadian_dict.items():
+        for k, v in dct.items():
             for t in translations:
                 if isinstance(t, str):
                     if t == v:
@@ -788,11 +866,10 @@ class Associations:
         wordlist = self._search_dict(translations)
         return [word[0] for word in wordlist]
 
-
 def demo():
     st = time.time()
     a = Associations()
-    a.set_window(size=10, symmetry=False)
+    a.set_window(size=10, symmetry=True)
     a.read_raw('neoA')
     sanat = a.has_translation(['kill'])
     a.set_constraints(freq_threshold=10,
@@ -808,8 +885,8 @@ def demo():
     a.score_bigrams(NPMI)
     #a.export_json('kokeilu.json')
     #b = a.import_json('kokeilu.json')
-    a.print_matrix('score')
-    #a.print_scores(30)
+    #a.print_matrix('score')
+    a.print_scores(30)
     a.write_tsv()
     et = time.time() - st
     print('time', et)
