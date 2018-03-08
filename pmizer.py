@@ -3,6 +3,7 @@
 
 from collections import Counter
 import sys
+import datetime
 import time
 import itertools
 import math
@@ -15,7 +16,7 @@ except ImportError:
     akkadian_dict = {}
 
 
-__version__ = "2018-03-03"
+__version__ = "2018-03-08"
 
 WINDOW_SCALING = False    # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
@@ -92,17 +93,13 @@ least in the context of royal inscriptions:
 
 
 ========================================================================
-Associations.set_properties(*kwargs) ===================================
+Associations.set_window(size, symmetry) ================================
 ========================================================================
 
-Constraints and properties may be set by using the following kwargs:
-
  ´windowsize´       (int) collocational window that defines the
-                    maximum mutual distance of the elements of a bigram.
-                    Minimum distance is 2, which means that the words
-                    are next to each another.
-
- ´freq_threshold´   (int) minimum allowed bigram frequency.
+                    maximum mutual distance of the elements of a non-
+                    contiguous bigram. Minimum distance is 2, which means
+                    that the words are next to each another (contiguous).
 
  ´symmetry´         (bool) Use symmetric window. If not used, the window
                     is forward-looking. For example, with a window size
@@ -111,7 +108,43 @@ Constraints and properties may be set by using the following kwargs:
                                  w1 w2 w3 w4 w5 w6 w7
                     symmetric       +--+--^--+--+
                     asymmetric            ^--+--+
-  
+
+
+========================================================================
+Associations.read_XXXXX(filename) ======================================
+========================================================================
+
+Associations.read_raw(filename)
+
+  Takes a lemmatized raw text file as an input. For example, a text
+  "Monkeys ate coconuts and the sun was shining" would be:
+
+     monkey eat coconut and the sun be shine
+
+  Bigrams are NOT allowed to span from line to another. Thus, if you
+  want to disallow, collocations spanning from sentence to another, the
+  text should contain one sentence per line.
+
+
+Associations.read_vrt(filename, word_attribute, delimiter)
+
+  Reads VRT files. You must define the ´word_attribute´ index (int),
+  from which the lemmas can be found. ´delimiter´ is used to set the
+  boundary, over which collocates are not allowed to span. Normally this
+  is either ´<text>´, ´<paragraph>´ or ´<sentence>´, but may as well be
+  ´<clause>´ or ´<line>´, too, if such are available in the file.
+
+NOTE: Window size must always be specified before reading the file!
+
+
+========================================================================
+Associations.set_constraints(**kwargs) =================================
+========================================================================
+
+Constraints and properties may be set by using the following kwargs:
+
+ ´freq_threshold´   (int) minimum allowed bigram frequency.
+
  ´words1´           (list) words of interest: Bigram(word1, word2)
  ´words2´           Words of interest may also be expressed as compiled
                     regular expressions. See exampes in ´stopwords´.
@@ -141,31 +174,17 @@ Constraints and properties may be set by using the following kwargs:
                     window size.
 
 
-========================================================================
-Associations.read_XXXXX(filename) ======================================
-========================================================================
+More advanced ways to define words of interest and stopwords:
 
-Associations.read_raw(filename)
+Words of interest or stopwords can also be defined by their translations
+if your corpus has a dictionary file available. Translations can be
+matched with strings and regular expressions. For example:
 
-  Takes a lemmatized raw text file as an input. For example, a text
-  "Monkeys ate coconuts and the sun was shining" would be:
+  wis = has_translation(['enemy', 'opponent', 'rival'])
 
-     monkey eat coconut and the sun be shine
-
-  Bigrams are NOT allowed to span from line to another. Thus, if you
-  want to disallow, collocations spanning from sentence to another, the
-  text should contain one sentence per line.
-
-
-Associations.read_vrt(filename, word_attribute, delimiter)
-
-  Reads VRT files. You must define the ´word_attribute´ index (int),
-  from which the lemmas can be found. ´delimiter´ is used to set the
-  boundary, over which collocates are not allowed to span. Normally this
-  is either ´<text>´, ´<paragraph>´ or ´<sentence>´, but may as well be
-  ´<clause>´ or ´<line>´, too, if such are available in the file.
-
-NOTE: Window size must always be specified before reading the file!
+will find all the Akkadian words that have any of these translations.
+The result can be passed to the set_constraints() as any stopword or
+word of interest kwarg.
 
 
 ========================================================================
@@ -274,11 +293,14 @@ class Associations:
 
     def __init__(self):
         self.text = []
+        self.output = []
+        self.output_format = None
         self.scored = {'freqs': {},
                        'translations': {},
                        'collocations': {},
                        'words1': [],
                        'words2': []}
+        self.measure = None
         self.windowsize = None
         self.freq_threshold = 1
         self.symmetry = False    
@@ -291,24 +313,28 @@ class Associations:
         self.distance_scaling = False
         self.log_base = LOGBASE
         self.window_scaling = WINDOW_SCALING
+        self.date = datetime.datetime.now()
 
     def __repr__(self):
         """ Return variables for log file """
         debug = []
         tab = max([len(k)+2 for k in self.__dict__.keys()])
-        for k, v in self.__dict__.items():
-            if k not in ['scored', 'text', 'regex_stopwords',
-                         'regex_words', 'distances', 'anywords', 'anywords1',
-                         'anywords2', 'wordfreqs']:
+        for k in sorted(self.__dict__.keys()):
+            if k not in ['scored', 'text', 'regex_stopwords', 'regex_words',
+                         'distances', 'anywords', 'anywords1', 'output',
+                         'anywords2', 'word_freqs']:
+                v = self.__dict__[k]
                 debug.append('%s%s%s' % (k, ' '*(tab-len(k)+1), str(v)))
-        return '\n'.join(debug) + '\n'
+
+        return '\n'.join(debug) + '\n' + '-'*20 +\
+               ' \npmizer version: ' + __version__
 
     def _readfile(self, filename):
         """ General file reader """
         if self.windowsize is None:
             print('Window size not defined ...')
             sys.exit()
-
+            
         self.filename = filename
         with open(filename, 'r', encoding="utf-8") as data:
             print('reading %s ...' % filename)
@@ -322,7 +348,7 @@ class Associations:
         buffers = 1
         for line in self._readfile(filename):
             self.text.extend(line.strip('\n').split(' ')
-                             + [BUFFER]*self.windowsize)
+                             + [BUFFER] * self.windowsize)
             buffers += 1
         self.corpus_size = len(self.text) - (buffers * self.windowsize)
         self.word_freqs = Counter(self.text)
@@ -340,7 +366,7 @@ class Associations:
         for line in self._readfile(filename):
             l = line.strip('\n')
             if l == delimiter:
-                self.text.extend([BUFFER]*self.windowsize)
+                self.text.extend([BUFFER] * self.windowsize)
                 buffers += 1
             if not l.startswith('<'):
                 self.text.append(l.split('\t')[lemmapos])
@@ -348,6 +374,19 @@ class Associations:
                 pass
         self.corpus_size = len(self.text) - (buffers * self.windowsize)
         self.word_freqs = Counter(self.text)
+
+    def _writefile(self, fn, content):
+        with open(fn, 'w', encoding='utf-8') as data:
+            data.write(content)        
+
+    def write_tsv(self):
+        prefix = self.measure + '_%i_%s_%s_' % (self.windowsize,
+                                                self.freq_threshold,
+                                                self.output_format)
+        fn = prefix + re.sub('\..+', '', self.filename)
+        print('writing %s...' % (fn + '.tsv'))
+        self._writefile(fn + '.tsv', '\n'.join(self.output))
+        self._writefile(fn + '.log', self.__repr__())
 
     def import_json(self, filename):
         """ Load lookup table from JSON """
@@ -387,7 +426,11 @@ class Associations:
                          self.regex_words[1], self.regex_words[2]])
         self.anywords1 = any([self.words[1], self.regex_words[1]])
         self.anywords2 = any([self.words[2], self.regex_words[2]])      
-        
+
+    def set_window(self, size=None, symmetry=False):
+        self.windowsize = size
+        self.symmetry = symmetry
+    
     def _trim_float(self, number):
         if number == '':
             return number
@@ -459,6 +502,7 @@ class Associations:
 
     def score_bigrams(self, measure):
         """ Score bigrams by using class ´measure´ """
+        self.measure = measure.__name__
         
         if not self.text:
             print('Input text not loaded.')
@@ -571,7 +615,6 @@ class Associations:
         
         """
         
-        
         w1list, w2list = [], [] # containers for found words of interest
         print('calculating scores ...')        
         for bigram in bigram_freqs.keys():
@@ -650,6 +693,7 @@ class Associations:
 
         print('generating {} matrix ...'.format(value))
 
+        self.output_format = 'matrix'
         table, from_json, words1, words2 = self._check_table(table)
         rows = [[value.upper() + ' MATRIX W1 ->']\
                 + ['{}'.format(w + ' ' + table['translations'][w])\
@@ -674,9 +718,9 @@ class Associations:
 
         """ Rotate matrix to clean empty columns """
         for r in [row for row in zip(*rows) if any(row[1:])]:
-            print('\t'.join([str(m) for m in r]))
+            self.output.append('\t'.join([str(m) for m in r]))
 
-    def print_scores(self, limit=10000, table=None):
+    def print_scores(self, limit=10000, table=None):       
         print('generating score table ...')
         #table, from_json, words1, words2 = self._check_table(table)
         if table is None:
@@ -684,6 +728,11 @@ class Associations:
         else:
             pass
 
+        """ Score table header """
+        self.output_format = 'scores'
+        self.output.append('\t'.join(['WORD1', 'TRANS1', 'WORD2', 'TRANS2',
+                       'W1_FREQ', 'W2_FREQ', 'BG_FREQ', 'SCORE', 'DIST']))
+        
         rows = []
         for w1 in table['collocations'].keys():
             for w2 in table['collocations'][w1].keys():
@@ -701,18 +750,16 @@ class Associations:
             if lastword != line[0]:
                 i = 0
             if i < limit:
-                print('\t'.join(self._stringify(line)))
+                self.output.append('\t'.join(self._stringify(line)))
             lastword = line[0]
             i += 1
-
+        
     def _search_dict(self, translations):
         """ General method for seaching the dictionary by
         given translations """
         if not self.text:
             print('text not loaded')
             sys.exit()
-        elif isinstance(translations, list):
-            translations = list(translations)
             
         freqlist = []
         def _get_freqs(k, v):
@@ -738,32 +785,32 @@ class Associations:
 
     def has_translation(self, translations):
         """ Return all words that have the given translation """
-        freqlist = self._search_dict(translations)
-        return [word[0] for word in freqlist]
+        wordlist = self._search_dict(translations)
+        return [word[0] for word in wordlist]
+
 
 def demo():
     st = time.time()
-    
-    # Initialize Associations
     a = Associations()
-    a.set_constraints(windowsize = 10,
-                      freq_threshold = 10,
-                      symmetry=True,
+    a.set_window(size=10, symmetry=False)
+    a.read_raw('neoA')
+    sanat = a.has_translation(['kill'])
+    a.set_constraints(freq_threshold=10,
                       track_distance=False,
                       distance_scaling=False,
-                      words1=['dâku'])#,
-                      #stopwords=[re.compile('^[A-Z].+')])
+                      words1=sanat,
+                      stopwords=[re.compile('^[A-Z].+')])
 
     #a.read_vrt('testi.vrt', 1, '<sentence>')
-    a.read_raw('Oracc')
+    
 
     #a.get_freqs_by_translation([re.compile('(enemy|opponent|rival)$')], -1)
-    #o = a.has_translation(['enemy', 'opponent'])
     a.score_bigrams(NPMI)
     #a.export_json('kokeilu.json')
     #b = a.import_json('kokeilu.json')
-    #a.print_matrix('score', b)
-    a.print_scores(30)
+    a.print_matrix('score')
+    #a.print_scores(30)
+    a.write_tsv()
     et = time.time() - st
     print('time', et)
     
