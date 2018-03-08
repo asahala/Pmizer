@@ -83,12 +83,12 @@ From these, we can reconstruct some kind of prototypical semantic field
 for ´weapon´ as it was probably perceived by the ancient Assyrians, at
 least in the context of royal inscriptions:
 
-    WEAPON is an object that is
+    WEAPON is something that is
       - LIFTED to intimidate and to show power
       - associated with FURY, ANGER and STRENGTH
       - used in BATTLES to DEFEAT ENEMIES and their CITIES between
         the SEAS in order to enforce the Assyrian KINGSHIP.
-      - great weapons (= success in battle) is granted by the GOD ASHUR
+      - great weapons is granted by the GOD ASHUR
 
 
 ========================================================================
@@ -326,7 +326,6 @@ class Associations:
             buffers += 1
         self.corpus_size = len(self.text) - (buffers * self.windowsize)
         self.word_freqs = Counter(self.text)
-        print(self.corpus_size)
 
     def read_vrt(self, filename, lemmapos, delimiter=''):
         """ Open VRT file. Takes arguments ´lemmapos´ (int), which
@@ -706,57 +705,67 @@ class Associations:
             lastword = line[0]
             i += 1
 
-
-    def get_words(self, translations, indices=[0]):
-        """ Search words and their frequencies by their translation
-        from the loaded text. ´translations´ may be a string or list
-        of translations or regular expression. """          
+    def _search_dict(self, translations):
+        """ General method for seaching the dictionary by
+        given translations """
         if not self.text:
             print('text not loaded')
             sys.exit()
         elif isinstance(translations, list):
             translations = list(translations)
-
+            
         freqlist = []
-        def _print_freqs(k, v):
+        def _get_freqs(k, v):
             if k in self.word_freqs.keys():
-                freqlist.append([k, v, self.word_freqs[k]])
+                freqlist.append([k, '[%s]' % v, self.word_freqs[k]])
 
         for k, v in akkadian_dict.items():
             for t in translations:
                 if isinstance(t, str):
                     if t == v:
-                        _print_freqs(k, v)
+                        _get_freqs(k, v)
                 else:
                     if re.match(t, v):
-                        _print_freqs(k, v)
-                    
-        for item in self._sort_by_index(freqlist, indices):
+                        _get_freqs(k, v)
+        return freqlist
+
+    def get_freqs_by_translation(self, translations, sort_by=0):
+        """ Search words and their frequencies by their translation
+        from the loaded text. """          
+        freqlist = self._search_dict(translations)     
+        for item in self._sort_by_index(freqlist, [sort_by]):
             print('\t'.join(self._stringify(item)))
-            
+
+    def has_translation(self, translations):
+        """ Return all words that have the given translation """
+        freqlist = self._search_dict(translations)
+        return [word[0] for word in freqlist]
+
 def demo():
     st = time.time()
     
     # Initialize Associations
     a = Associations()
     a.set_constraints(windowsize = 10,
-                      freq_threshold = 5,
+                      freq_threshold = 10,
                       symmetry=True,
                       track_distance=False,
                       distance_scaling=False,
-                      words1=['šagāšu'],
-                      stopwords=[re.compile('^[A-Z].+')])
+                      words1=['dâku'])#,
+                      #stopwords=[re.compile('^[A-Z].+')])
 
     #a.read_vrt('testi.vrt', 1, '<sentence>')
     a.read_raw('Oracc')
 
-    #a.get_words([re.compile('(kill|execute|murder)$')], [-1])
+    #a.get_freqs_by_translation([re.compile('(enemy|opponent|rival)$')], -1)
+    #o = a.has_translation(['enemy', 'opponent'])
     a.score_bigrams(NPMI)
-    a.export_json('kokeilu.json')
+    #a.export_json('kokeilu.json')
     #b = a.import_json('kokeilu.json')
     #a.print_matrix('score', b)
-    a.print_scores(15)
+    a.print_scores(30)
     et = time.time() - st
     print('time', et)
-
+    
 demo()
+
