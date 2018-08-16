@@ -18,14 +18,14 @@ except ImportError:
     dct = {}
 
 
-__version__ = "2018-05-23"
+__version__ = "2018-08-14"
 
-WINDOW_SCALING = False    # Apply window size penalty to scores
+WINDOW_SCALING = True    # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
 LACUNA = '_'              # Symbol for lacunae in cuneiform languages
 BUFFER = '<BUFFER>'       # Buffer symbol; added after each line
 DECIMAL = ','             # Decimal point marker
-WRAPCHARS = ['']          # Wrap translations/POS-tags between these
+WRAPCHARS = ['[', ']']          # Wrap translations/POS-tags between these
                           # symbols, e.g. ['"'] for "string". Give two
                           # if beginning and end symbols are different
 MYLLY = False             # Add Mylly-prefixes
@@ -375,13 +375,13 @@ def _log(n):
 
 def _make_korp_oracc_url(w1, w2, wz):
     """ Generate URL for Oracc in Korp """
-    base = 'https://korp.csc.fi/?mode=other_languages#'\
+    base = 'https://korp.csc.fi/test-as/?mode=other_languages#'\
            '?lang=fi&stats_reduce=word'
     cqp = '&cqp=%5Blemma%20%3D%20%22{w1}%22%5D%20%5B%5D%7B1,'\
           '{wz}%7D%20%5Blemma%20%3D%20%22{w2}%22%5D'\
           .format(w1=urllib.parse.quote(w1), w2=urllib.parse.quote(w2), wz=wz)
     corps = '&corpus=oracc_cams,oracc_dcclt,oracc_ribo,'\
-            'oracc_rinap,oracc_saao,oracc_other&search_tab=1&search=cqp'
+            'oracc_rinap,oracc_saao,oracc_other&search_tab=1&search=cqp&within=paragraph'
     return base+cqp+corps
     
 class PMI:
@@ -520,12 +520,16 @@ class Associations:
         Add buffer equal to window size after each text to prevent
         words from different texts being associated. """
         buffers = 1
+        maxlen = 0
         for line in self._readfile(filename):
-            self.text.extend(line.strip('\n').split(' ')
-                             + [BUFFER] * self.windowsize)
+            lemmas = line.strip('\n').split(' ')
+            if len(lemmas) > maxlen:
+                maxlen = len(lemmas)
+            self.text.extend(lemmas + [BUFFER] * self.windowsize)
             buffers += 1
         self.corpus_size = len(self.text) - (buffers * self.windowsize)
         self.word_freqs = Counter(self.text)
+        print('longest line: %i' %  maxlen)
 
     def read_vrt(self, filename, lemmapos, pospos, delimiter='text'):
         """ Open VRT file.
@@ -746,7 +750,7 @@ class Associations:
             scores comparable with NLTK/Collocations PMI measure """
             if WINDOW_SCALING:
                 if self.symmetry:
-                    return bf / (self.windowsize - 1 + self.windowsize - 1)
+                    return bf / (self.windowsize - 1) #(self.windowsize - 1 + self.windowsize - 1)
                 else:
                     return bf / (self.windowsize - 1)
             else:
@@ -964,7 +968,7 @@ class Associations:
             """ For Oracc """
             header = ['word1', 'attr1', 'word2', 'attr2',
                       'word1 freq', 'word2 freq', 'bigram freq',
-                      'score', 'score2', 'score trimmed', 'distance']
+                      'score trimmed', 'distance', 'url']
             
             sort_indices = [0, -3]
 
@@ -1093,10 +1097,11 @@ def demo():
                "hadû","raʾābu","râmu","dalhu","ezēzu","palāhu"]
     sins = ["ennettu","gillatu","gullultu","gullulu","pippilû",
             "šettu","šērtu","arnu","hiṭītu","hīṭu"]
+    speak = ['awû', 'zakāru', 'dabābu', 'qabû']
     #g = ["gillatu","gullultu"]
     st = time.time()
     a = Associations()
-    a.set_window(size=20, symmetry=True)
+    a.set_window(size=10, symmetry=True)
     a.read_raw('neoA_textMay18')
     #a.read_vrt('test.vrt', 2,3)
     #a.read_vrt('s24.vrt', 2, 3)
@@ -1107,11 +1112,10 @@ def demo():
     gods = godlist.new#ista['neoA']
     #w2 = [re.compile('[A-Z].+')]
     #gods = a.has_translation(['kill'])
-    a.set_constraints(freq_threshold=1,
+    a.set_constraints(freq_threshold=5,
                       track_distance=True,
                       distance_scaling=False,
-                      words1=emotion,
-                      words2=[re.compile('.+?_P')])
+                      words1=speak)
 
     #a.read_vrt('testi.vrt', 1, '<sentence>')
     
@@ -1125,11 +1129,27 @@ def demo():
     #a.export_json('kokeilu.json')
     #b = a.import_json('kokeilu.json')
     #a.print_matrix('score')
-    a.print_scores()
+    a.print_scores(25)
     #a.tmp_calc_total()
     a.write_tsv('lauta')
     #a.get_freqs_by_lemma(gods)
     et = time.time() - st
     print('time', et)
+
+def sins_():
+    a = Associations()
+    a.set_window(size=25, symmetry=True)
+    a.read_raw('poista.txt')
+    sins = ["ennettu","gillatu","gullultu","gullulu","pippilû",
+            "šettu","šērtu","arnu","hiṭītu","hīṭu"]
+    a.set_constraints(freq_threshold=2,
+                      track_distance=True,
+                      distance_scaling=False,
+                      words1=sins)
+    a.score_bigrams(PMI2)
+    a.print_matrix('score')
+    a.write_tsv('lauta')
+#sins_()
+
 
 demo()
