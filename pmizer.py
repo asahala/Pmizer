@@ -20,7 +20,7 @@ except ImportError:
 
 __version__ = "2018-08-14"
 
-WINDOW_SCALING = True    # Apply window size penalty to scores
+WINDOW_SCALING = False    # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
 LACUNA = '_'              # Symbol for lacunae in cuneiform languages
 BUFFER = '<BUFFER>'       # Buffer symbol; added after each line
@@ -442,15 +442,6 @@ class PPMI:
     def score(ab, a, b, cz):
         return max(PMI.score(ab, a, b, cz), 0)
 
-class PPMI2:
-    """ Positive derivative of PMI^2. Shares exaclty the same
-    properties but the score orientation is on the positive
-    plane: 1 > 2^log p(a,b) > 0 """
-    minimum = 0
-    
-    @staticmethod
-    def score(ab, a, b, cz):
-        return 2 ** PMI2.score(ab, a, b, cz)
 
 class Associations:
 
@@ -1098,24 +1089,27 @@ def demo():
     sins = ["ennettu","gillatu","gullultu","gullulu","pippilû",
             "šettu","šērtu","arnu","hiṭītu","hīṭu"]
     speak = ['awû', 'zakāru', 'dabābu', 'qabû']
+    see = ['barû','palāsu','naṭālu','ṣubbû','amāru','dagālu','hiāṭu']
     #g = ["gillatu","gullultu"]
     st = time.time()
     a = Associations()
-    a.set_window(size=10, symmetry=True)
-    a.read_raw('neoA_textMay18')
+    a.set_window(size=7, symmetry=True)
+    a.read_raw('all_Aug18_notags')
+
+    #a.read_raw('neoA_textMay18')
     #a.read_vrt('test.vrt', 2,3)
     #a.read_vrt('s24.vrt', 2, 3)
     vt = time.time() - st
     print('reading completed', vt)
     #sanat = a.has_translation(['Punct', 'C', 'Pron'])
     #subst = a.has_translation(['N', 'V'])
-    gods = godlist.new#ista['neoA']
+    #gods = godlist.new#ista['neoA']
     #w2 = [re.compile('[A-Z].+')]
     #gods = a.has_translation(['kill'])
-    a.set_constraints(freq_threshold=5,
+    a.set_constraints(freq_threshold=3,
                       track_distance=True,
                       distance_scaling=False,
-                      words1=speak)
+                      words1=speak)#,                  words2=godlist.)
 
     #a.read_vrt('testi.vrt', 1, '<sentence>')
     
@@ -1123,13 +1117,13 @@ def demo():
     #a.get_freqs_by_translation([re.compile('(crime|sin|error|shortfall)$')], -1)
     
     st2 = time.time()
-    a.score_bigrams(PMI2)
+    a.score_bigrams(PPMI2)
     vt = time.time() - st2
     print('scoring completed', vt)
     #a.export_json('kokeilu.json')
     #b = a.import_json('kokeilu.json')
     #a.print_matrix('score')
-    a.print_scores(25)
+    a.print_scores(50)
     #a.tmp_calc_total()
     a.write_tsv('lauta')
     #a.get_freqs_by_lemma(gods)
@@ -1138,7 +1132,7 @@ def demo():
 
 def sins_():
     a = Associations()
-    a.set_window(size=25, symmetry=True)
+    a.set_window(size=40, symmetry=True)
     a.read_raw('poista.txt')
     sins = ["ennettu","gillatu","gullultu","gullulu","pippilû",
             "šettu","šērtu","arnu","hiṭītu","hīṭu"]
