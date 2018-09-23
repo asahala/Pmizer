@@ -18,7 +18,7 @@ except ImportError:
     dct = {}
 
 
-__version__ = "2018-08-14"
+__version__ = "2018-09-23"
 
 WINDOW_SCALING = False    # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
@@ -216,6 +216,24 @@ Constraints and properties may be set by using the following kwargs:
                     on the window size. With large symmetric windows
                     this can take several minutes or even hours.
 
+ ´formulaic_filter´ (bool) if set to True, only one instance is
+                    taken into account from each exactly same formulaic
+                    expression. This will allow one to take a look at
+                    more free language use especially in Akkadian where
+                    formulaic expressions are very common.
+
+ ´formulaic_measure´ Gives collocates an additional score depending on
+                    how formulaic the context is. Possible choices are
+                    (do not use " or ' with these):
+
+                    None     (default) No measure
+
+                    Greedy   Percentage of similar information
+                    Lazy     Percentage of repeated information
+                    Strict   formulaic : free (ratio)
+
+                    See more precise documentation in the comments about
+                    repetitiveness measures.
 
 ========================================================================
 Associations.score_bigrams(measure) ====================================
@@ -377,13 +395,18 @@ def _make_korp_oracc_url(w1, w2, wz):
     """ Generate URL for Oracc in Korp """
     base = 'https://korp.csc.fi/test-as/?mode=other_languages#'\
            '?lang=fi&stats_reduce=word'
-    cqp = '&cqp=%5Blemma%20%3D%20%22{w1}%22%5D%20%5B%5D%7B1,'\
+    cqp = '&cqp=%5Blemma%20%3D%20%22{w1}%22%5D%20%5B%5D%7B0,'\
           '{wz}%7D%20%5Blemma%20%3D%20%22{w2}%22%5D'\
           .format(w1=urllib.parse.quote(w1), w2=urllib.parse.quote(w2), wz=wz)
     corps = '&corpus=oracc_cams,oracc_dcclt,oracc_ribo,'\
             'oracc_rinap,oracc_saao,oracc_other&search_tab=1&search=cqp&within=paragraph'
     return base+cqp+corps
-    
+
+
+""" ====================================================================
+Word association measures
+==================================================================== """
+
 class PMI:
     """ Pointwise Mutual Information. The score orientation is
     -log p(a,b) > 0 > -inf """
@@ -442,6 +465,136 @@ class PPMI:
     def score(ab, a, b, cz):
         return max(PMI.score(ab, a, b, cz), 0)
 
+class PPMI2:
+    """ Positive derivative of PMI^2. Shares exaclty the same
+    properties but the score orientation is on the positive
+    plane: 1 > 2^log p(a,b) > 0 """
+    minimum = 0
+    
+    @staticmethod
+    def score(ab, a, b, cz):
+        return 2 ** PMI2.score(ab, a, b, cz)
+
+
+""" ====================================================================
+Repetitiveness measures
+
+These can be used to detect and score formulaic expressions. There
+are three measures. In the examples W stands for our word of interest
+and X for its collocate. Other letters represent individual words.
+Note, that the collocate and our word of interest are not part of
+the window! The measure is interested only in the context where they
+co-occur.
+
+Greedy:
+
+    Greedy measure represents the amount of repetitiveness within
+    the contexts where our collocate co-occurs with the word of
+    interest. A score of 1.0 would indicate that the collocate only
+    occurs in formulaic expressions (regardless if there are one
+    or several different expressions). A score of 0.5 would indicte
+    that half of the contexts are repeated. The contexts do not have
+    to be exactly similar in order to be accepted as formulaic, for
+    example, if in one instance one word in the expression would be
+    different, it would not be discarded, but the score would be
+    slightly decreased. 
+
+             a   b   W   c   d    X
+             a   b   W   c   d    X
+             a   b   W   c   e    X
+    sim.     1.0 1.0 _   1.0 0.66 _       = 0.916 (avg)
+
+
+Strict:
+
+    Strict measure represents the ratio of unique expressions to
+    formulaic expressions that are exactly similar. A score of
+    0.66 would indicate that 2/3 of the contexts are strictly
+    formulaic.
+    
+             a   b   W   c   d   X    1.0
+             a   b   W   c   d   X    1.0
+             a   b   W   c   e   X    0.0
+    sim.                              0.66
+
+
+Lazy:
+
+    Lazy measure represents the percentage of repetitive content,
+    but it does not take into account one instance of each repeated
+    word in the same position in an expression. Thus, a score of 0.583
+    would indicate that 58.3% of the content in expressions is repeated.
+
+             a    b    W    c    d     X
+             a    b    W    c    d     X 
+             a    b    W    c    e     X
+    sim.     0.66 0.66 _    0.66 0.33  X   = 0.583
+    
+    The greedy and lazy measures can give quite a different results.
+    In the following, greedy indicates that 100% of the expressions
+    are formulaic, while lazy indicates thet 50% of the content is
+    repeated.
+
+    Greedy   a    b    W    c    d     X
+             a    b    W    c    d     X 
+             1.0  1.0  _    1.0  1.0   _   = 1.0
+
+    Lazy     a    b    W    c    d     X
+             a    b    W    c    d     X 
+             0.5  0.5  _    0.5  0.5   _   = 0.5
+
+    NOTE that you can force the similarity score to 1.0 also in
+    lazy measure in such cases where only one word occurs in the
+    same position in every expression. This is done by setting
+    formulaic_forced = True
+
+    This makes the overall scores more difficult to interprete,
+    but it reveals instantly those words that always occur in
+    only one expression.
+    
+==================================================================== """
+
+class Greedy:    
+
+    @staticmethod
+    def score(windows, forced):
+        reps = []
+        for words in zip(*windows[::-1]):
+            counts = Counter(words).values()
+            singles = len([x for x in counts if x == 1])
+            reps.append(1-(singles/len(words)))
+        return sum(reps) / len(reps)
+
+class Strict:
+
+    @staticmethod
+    def score(windows, forced):
+        all_ = len(windows)
+        uniqs = len(set([''.join(x) for x in windows]))
+        if uniqs == 1:
+            return 1.0
+        else:
+            return 1 - ((all_ - uniqs) / all_)
+
+class Lazy:
+    
+    @staticmethod
+    def score(windows, forced):
+        diffs = []
+        for word in zip(*windows[::-1]):
+            uniques = len(set(word))
+            if uniques == 1:
+                uniques = forced
+            diffs.append((len(word) - uniques) / len(word))
+            #print('\t'.join(word), (len(word) - uniques) / len(word))
+        return sum(diffs) / len(diffs)
+
+class Number:
+
+    @staticmethod
+    def score(windows, forced):
+        return len(set([''.join(x) for x in windows]))
+        
 
 class Associations:
 
@@ -471,7 +624,11 @@ class Associations:
         self.log_base = LOGBASE
         self.window_scaling = WINDOW_SCALING
         self.date = datetime.datetime.now()
-
+        self.WINS = {}
+        self.formulaic_measure = None ## DOCUMENT THIS
+        self.formulaic_filter = False ## DOCUMENT THIS
+        self.formulaic_forced = False
+        
     def __repr__(self):
         debug = []
         tab = max([len(k)+2 for k in self.__dict__.keys()])
@@ -479,7 +636,7 @@ class Associations:
             if k not in ['scored', 'text', 'regex_stopwords', 'regex_words',
                          'distances', 'anywords', 'anywords1', 'output',
                          'anywords2', 'anycondition', 'word_freqs',
-                         'positive_condition', 'minimum']:
+                         'positive_condition', 'minimum', 'WINS']:
                 v = self.__dict__[k]
                 debug.append('%s%s%s' % (k, ' '*(tab-len(k)+1), str(v)))
 
@@ -722,6 +879,17 @@ class Associations:
     Uses separate functions to avoid complex conditional statements.
     ================================================================ """
 
+    def _similarities(self, bigram, window):
+        unique = True
+        w = [e for e in window if e not in (LACUNA, BUFFER)]
+        if bigram not in self.WINS.keys():
+            self.WINS[bigram] = [w]
+        else:
+            if w in self.WINS[bigram]:
+                unique = False
+            self.WINS[bigram].append(w)
+        return unique
+
     def score_bigrams(self, measure):
         """ Score bigrams by using class ´measure´ """
         print('counting bigrams ...')
@@ -735,13 +903,27 @@ class Associations:
         if not self.text:
             print('Input text not loaded.')
             sys.exit()
+
+        def _count_repeating_info(bigram):
+            pass
         
+        def _count_repeating_info_(bigram):
+            pass
+        
+        def _check_formulaic(bigram, window):
+            # DOCUMENT
+            if self.formulaic_measure is not None:
+                uniq_window = self._similarities(bigram, window)
+                if self.formulaic_filter and not uniq_window:
+                    bigram = ('_', '_')
+            return bigram
+            
         def scale(bf, distance):
             """ Scale bigram frequency with window size. Makes the
             scores comparable with NLTK/Collocations PMI measure """
             if WINDOW_SCALING:
                 if self.symmetry:
-                    return bf / (self.windowsize - 1) #(self.windowsize - 1 + self.windowsize - 1)
+                    return bf / (self.windowsize - 1)
                 else:
                     return bf / (self.windowsize - 1)
             else:
@@ -754,7 +936,7 @@ class Associations:
                 if self._is_wordofinterest(w[wz], 1) and \
                    self._has_condition(w[0:wz]+w[wz+1:]):
                     for bigram in itertools.product([w[wz]], w[0:wz]+w[wz+1:]):
-                        yield bigram
+                        yield _check_formulaic(bigram, w[0:wz]+w[wz+1:])
 
         def count_bigrams_symmetric_dist():
             """ Symmetric window and distance tracking. """
@@ -774,10 +956,15 @@ class Associations:
                 if self._is_wordofinterest(w[wz], 1) and \
                    self._has_condition(left+right):
                     for bigram in itertools.product([w[wz]], left+right):
+                        bigram = _check_formulaic(bigram, left+right)
+                        #if self.formulaic_measure is not None:
+                        #    uniq_window = self._similarities(bigram, left+right)
                         context = chain(left[::-1], right)
                         min_dist = math.floor(context.index(bigram[1])/2) +1
                         """ Force items into dictionary for better
                         performance """
+                        #if not uniq_window:
+                        #    bigram = ('_', '_')
                         try:
                             self.distances[bigram].append(min_dist)
                         except:
@@ -790,7 +977,7 @@ class Associations:
             for w in zip(*[self.text[i:] for i in range(self.windowsize)]):
                 if w[0] in self.words[1] and self._has_condition(w[1:]):
                     for bigram in itertools.product([w[0]], w[1:]):
-                        yield bigram
+                        yield _check_formulaic(bigram, w[1:])
 
         def count_bigrams_forward_dist():
             """ Calculate bigrams within each forward-looking window,
@@ -801,14 +988,15 @@ class Associations:
                 if w[0] in self.words[1] and self._has_condition(w[1:]):
                     bigrams = enumerate(itertools.product([w[0]], w[1:]))
                     for bigram in bigrams:
+                        bg = _check_formulaic(bigram[1], w[1:])
                         """ Force items into dictionary as it is faster
                         than performing key comparisons """
                         try:
-                            self.distances[bigram[1]].append(bigram[0] + 1)
+                            self.distances[bg].append(bigram[0] + 1)
                         except:
-                            self.distances[bigram[1]] = [bigram[0] + 1]
+                            self.distances[bg] = [bigram[0] + 1]
                         finally:
-                            yield bigram[1]
+                            yield bg
 
         """ Selector for window type and distance tracking """
         if self.symmetry:
@@ -825,16 +1013,25 @@ class Associations:
         """ Make dictionary for JSON """
         print('calculating scores ...')
         w1list, w2list = [], []
+        F_MEASURE = self.formulaic_measure
         for bigram in bigram_freqs.keys():
             w1, w2 = bigram[0], bigram[1]
             if self._is_valid(w1, w2, bigram_freqs[bigram]):
+                if self.formulaic_measure is not None:
+                    formulaic_measure = F_MEASURE.score(self.WINS[bigram],
+                                                        self.formulaic_forced)
+                else:
+                    formulaic_measure = ''
+                    
                 distance = self._get_distance(bigram)
                 freq_w1 = self.word_freqs[w1]
                 freq_w2 = self.word_freqs[w2]               
                 score = measure.score(scale(bigram_freqs[bigram], distance),
                                       freq_w1, freq_w2, self.corpus_size)
-                data = {'score': score, 'distance': distance,
-                        'frequency': bigram_freqs[bigram]}
+                data = {'score': score,
+                        'distance': distance,
+                        'frequency': bigram_freqs[bigram],
+                        'similarity': formulaic_measure}
                 self.scored['translations'][w1] = self._get_translation(w1)
                 self.scored['translations'][w2] = self._get_translation(w2)
                 self.scored['freqs'][w1] = freq_w1
@@ -942,6 +1139,12 @@ class Associations:
                 else:
                     return key
 
+        def _get_diff(bigram):
+            diff = []
+            for word in zip(*self.WINS[bigram][::-1]):
+                diff.append(len(set(word)) / len(word))
+            return sum(diff) / len(diff)
+
         print('generating score table ...')
         #table, from_json, words1, words2 = self._check_table(table)
         if table is None:
@@ -959,9 +1162,9 @@ class Associations:
             """ For Oracc """
             header = ['word1', 'attr1', 'word2', 'attr2',
                       'word1 freq', 'word2 freq', 'bigram freq',
-                      'score trimmed', 'distance', 'url']
+                      'score trimmed', 'distance', 'similarity', 'url']
             
-            sort_indices = [0, -3]
+            sort_indices = [0, -4]
 
         self.output_format = 'scores'
         self.output.append('\t'.join([_add_prefix(x) for x in header]))
@@ -983,6 +1186,7 @@ class Associations:
                          'score': '{0:.16f}'.format(bigram['score']),#float(bigram['score']),
                          'score2': float('{0:.16f}'.format(bigram['score'])),#float(bigram['score']),
                          'distance': bigram['distance'],
+                         'similarity': bigram['similarity'],
                          'url': _make_korp_oracc_url(w1, w2, self.windowsize-2)}
                 rows.append([items[key] for key in header])
                 
@@ -1081,69 +1285,6 @@ def demo():
     a.write_tsv('lauta')
     
     """
-    emotion = ["zenû","adāru","qardu","nazāqu","ezzu","palhu",
-               "nizmatu","erēšu","buʾāru","šutadduru","aggu","parādu",
-               "takālu","tākilu","šabsu","šabāsu","bâšu","šamru",
-               "šamriš","ṣummirātu","šebû","ešû","pādû","hūdu",
-               "hadû","raʾābu","râmu","dalhu","ezēzu","palāhu"]
-    sins = ["ennettu","gillatu","gullultu","gullulu","pippilû",
-            "šettu","šērtu","arnu","hiṭītu","hīṭu"]
-    speak = ['awû', 'zakāru', 'dabābu', 'qabû']
-    see = ['barû','palāsu','naṭālu','ṣubbû','amāru','dagālu','hiāṭu']
-    #g = ["gillatu","gullultu"]
-    st = time.time()
-    a = Associations()
-    a.set_window(size=7, symmetry=True)
-    a.read_raw('all_Aug18_notags')
-
-    #a.read_raw('neoA_textMay18')
-    #a.read_vrt('test.vrt', 2,3)
-    #a.read_vrt('s24.vrt', 2, 3)
-    vt = time.time() - st
-    print('reading completed', vt)
-    #sanat = a.has_translation(['Punct', 'C', 'Pron'])
-    #subst = a.has_translation(['N', 'V'])
-    #gods = godlist.new#ista['neoA']
-    #w2 = [re.compile('[A-Z].+')]
-    #gods = a.has_translation(['kill'])
-    a.set_constraints(freq_threshold=3,
-                      track_distance=True,
-                      distance_scaling=False,
-                      words1=speak)#,                  words2=godlist.)
-
-    #a.read_vrt('testi.vrt', 1, '<sentence>')
-    
-
-    #a.get_freqs_by_translation([re.compile('(crime|sin|error|shortfall)$')], -1)
-    
-    st2 = time.time()
-    a.score_bigrams(PPMI2)
-    vt = time.time() - st2
-    print('scoring completed', vt)
-    #a.export_json('kokeilu.json')
-    #b = a.import_json('kokeilu.json')
-    #a.print_matrix('score')
-    a.print_scores(50)
-    #a.tmp_calc_total()
-    a.write_tsv('lauta')
-    #a.get_freqs_by_lemma(gods)
-    et = time.time() - st
-    print('time', et)
-
-def sins_():
-    a = Associations()
-    a.set_window(size=40, symmetry=True)
-    a.read_raw('poista.txt')
-    sins = ["ennettu","gillatu","gullultu","gullulu","pippilû",
-            "šettu","šērtu","arnu","hiṭītu","hīṭu"]
-    a.set_constraints(freq_threshold=2,
-                      track_distance=True,
-                      distance_scaling=False,
-                      words1=sins)
-    a.score_bigrams(PMI2)
-    a.print_matrix('score')
-    a.write_tsv('lauta')
-#sins_()
-
+    pass
 
 demo()
