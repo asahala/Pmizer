@@ -11,8 +11,4 @@ Features:
 - Word distance tracking
 - Regex support for word/stopword filters
 - High performance algorithms for score calculation and n-gram finding
-- JSON exporting/importing
-
-Todo:
-- neater output formats, csv, xlxs, json; score tables, matrices etc.
-- more measures
+- Measures for detecting formulaic expressions and repetitiveness
