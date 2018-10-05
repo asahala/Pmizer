@@ -17,28 +17,35 @@ except ImportError:
     print('dictionary.py not found!')
     dct = {}
 
+__version__ = "2018-10-03"
+print('pmizer.py version %s\n' % __version__)
 
-__version__ = "2018-09-23"
-
+INDENT = ' '*4            # Indentation depth
 WINDOW_SCALING = False    # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
 LACUNA = '_'              # Symbol for lacunae in cuneiform languages
-BUFFER = '<BUFFER>'       # Buffer symbol; added after each line
+BUFFER = '<BF>'           # Buffer symbol; added after each line/text
+LINEBREAK = '<LB>'        # Marks line / text boundaries
 DECIMAL = ','             # Decimal point marker
-WRAPCHARS = ['[', ']']          # Wrap translations/POS-tags between these
+WRAPCHARS = ['[', ']']    # Wrap translations/POS-tags between these
                           # symbols, e.g. ['"'] for "string". Give two
                           # if beginning and end symbols are different
 MYLLY = False             # Add Mylly-prefixes
 HIDE_MIN_SCORE = True     # Hide minimum scores in matrices
+X = []                    # Debugging (store stuff here)
+Z = {}                    # Debugging (store stuff here)
+DEBUG = 'ilu'
+
 
 """ ====================================================================
-Association measures - Aleksi Sahala 2018 - University of Helsinki =====
+pmizer.py - Aleksi Sahala 2018 - University of Helsinki ================
 ========================================================================
 
 / Deep Learning and Semantic Domains in Akkadian Texts
 / Centre of Excellence in Ancient Near Eastern Empires
 / Language Bank of Finland
 
+/ http://github.com/asahala
 
 ========================================================================
 General description ====================================================
@@ -391,6 +398,7 @@ def _log(n):
     else:
         return math.log(n, LOGBASE)
 
+
 def _make_korp_oracc_url(w1, w2, wz):
     """ Generate URL for Oracc in Korp """
     base = 'https://korp.csc.fi/test-as/?mode=other_languages#'\
@@ -554,8 +562,19 @@ Lazy:
     
 ==================================================================== """
 
-class Greedy:    
+class FormulaicMeasures:
 
+    @staticmethod
+    def compensate(words):
+        """ Neglect metasymbols and tags """
+        compensate = 0
+        for symbol in [LACUNA, BUFFER, LINEBREAK]:
+            compensate += max(words.count(symbol) - 1, 0)
+        return compensate
+
+class Greedy:
+
+    ## DO NOT USE
     @staticmethod
     def score(windows, forced):
         reps = []
@@ -567,6 +586,7 @@ class Greedy:
 
 class Strict:
 
+    ## DO NOT USE
     @staticmethod
     def score(windows, forced):
         all_ = len(windows)
@@ -577,24 +597,22 @@ class Strict:
             return 1 - ((all_ - uniqs) / all_)
 
 class Lazy:
-    
+
     @staticmethod
     def score(windows, forced):
+        #print('\n')
+        #print('\n')
+        #for x in windows:
+        #    print(x)
         diffs = []
         for word in zip(*windows[::-1]):
-            uniques = len(set(word))
+            uniques = len(set(word)) + FormulaicMeasures.compensate(word)
             if uniques == 1:
                 uniques = forced
             diffs.append((len(word) - uniques) / len(word))
+            """ Uncomment to see probabilities """
             #print('\t'.join(word), (len(word) - uniques) / len(word))
         return sum(diffs) / len(diffs)
-
-class Number:
-
-    @staticmethod
-    def score(windows, forced):
-        return len(set([''.join(x) for x in windows]))
-        
 
 class Associations:
 
@@ -628,6 +646,7 @@ class Associations:
         self.formulaic_measure = None ## DOCUMENT THIS
         self.formulaic_filter = False ## DOCUMENT THIS
         self.formulaic_forced = False
+        self.metadata = {}
         
     def __repr__(self):
         debug = []
@@ -644,9 +663,25 @@ class Associations:
                ' \npmizer version: ' + __version__
 
     """ ================================================================
+    Metadata ===========================================================
+    ================================================================ """
+
+    def _abbreviate(self, meta):
+        """ Abbreviate and combine metadata according to definitions
+        in godlist.py """
+        
+        m = {'period': meta[0].lower(), 'genre': meta[1].lower()}
+        for k, v in m.items():
+            if v in godlist.abbrevs[k].keys():
+                yield godlist.abbrevs[k][v]
+            else:
+                print('  Metadata warning: "%s" unspecified.' % v)
+                yield '_'
+    
+    """ ================================================================
     File ops ===========================================================
     ================================================================ """
-    
+
     def _readfile(self, filename):
         """ General file reader """
         if self.windowsize is None:
@@ -655,7 +690,7 @@ class Associations:
             
         self.filename = filename
         with open(filename, 'r', encoding="utf-8", errors="ignore") as data:
-            print('reading %s ...' % filename)
+            print('Reading %s ... \n' % filename)
             self.text = [BUFFER]*self.windowsize
             return data.readlines()
 
@@ -668,17 +703,45 @@ class Associations:
         Add buffer equal to window size after each text to prevent
         words from different texts being associated. """
         buffers = 1
-        maxlen = 0
-        for line in self._readfile(filename):
+        maxlen = [] # line lengths
+        lines = 0
+        meta = None # no metadata available
+        self.metalist = [] # container for metadata
+        for l in self._readfile(filename):
+            linedata = l.split('\t')
+            line = linedata[-1]
+            
+            if len(linedata) > 1:
+                meta = linedata[0:-1]
+            if meta is not None:
+                self.metalist.append(self._abbreviate(meta))
+                
             lemmas = line.strip('\n').split(' ')
-            if len(lemmas) > maxlen:
-                maxlen = len(lemmas)
-            self.text.extend(lemmas + [BUFFER] * self.windowsize)
+            #if len(lemmas) > maxlen:
+            maxlen.append(len(lemmas))
+            self.text.extend([LINEBREAK] + lemmas + [BUFFER] * self.windowsize)
             buffers += 1
+            lines += 1
+            
         self.corpus_size = len(self.text) - (buffers * self.windowsize)
         self.word_freqs = Counter(self.text)
-        print('longest line: %i' %  maxlen)
 
+        freqs = sorted([v for k, v in self.word_freqs.items()])
+        print('-'*60)
+        print('Corpus statistics:')
+        print('%sLine count: %i' % (INDENT, lines))
+        print('%sLongest line: %i words' % (INDENT, max(maxlen)))
+        print('%sMedian line length: %i words' % (INDENT,
+                            sorted(maxlen)[int(len(maxlen)/2)]))
+        print('%sAverage line length: %i words' % (INDENT,
+                            sum(maxlen)/len(maxlen)))
+        print('%sWord count: %i' % (INDENT, self.corpus_size))
+        print('%sUnique lemmata: %i' % (INDENT, len(self.word_freqs.keys())))
+        print('%sMedian word frequency: %i' % (INDENT,
+                            freqs[int(len(freqs)/2)]))
+        print('%sAverage word frequency: {0:.2f}'.format(sum(freqs)/len(freqs)) % INDENT)
+        print('-'*60 + '\n')
+        
     def read_vrt(self, filename, lemmapos, pospos, delimiter='text'):
         """ Open VRT file.
 
@@ -723,19 +786,19 @@ class Associations:
         else:
             fn = filename
             
-        print('writing %s...' % (fn + '.tsv'))
+        print('Writing %s...' % (fn + '.tsv'))
         self._writefile(fn + '.tsv', '\n'.join(self.output))
         self._writefile(fn + '.log', self.__repr__())
 
     def import_json(self, filename):
         """ Load lookup table from JSON """
-        print('reading %s ...' % filename)
+        print('Reading %s ...' % filename)
         with open(filename, encoding='utf-8') as data:
             return json.load(data)
         
     def export_json(self, filename):
         """ Save lookup table as JSON """
-        print('writing %s ...' % filename)
+        print('Writing %s ...' % filename)
         with open(filename, 'w', encoding="utf-8") as data:
             json.dump(self.scored, data)
 
@@ -877,22 +940,48 @@ class Associations:
     *_symmetric_dist()    Keep track of distances
 
     Uses separate functions to avoid complex conditional statements.
+    (there are already too many conditionals)
+    
     ================================================================ """
-
+    
     def _similarities(self, bigram, window):
+        """ Store all windows to self.WINS, if formulaic_filter is
+        on, discard all bigrams that appear more than once in the
+        same window; note that removing bigrams distort the
+        association measures, as the total frequencies are not
+        adjusted """
+
+        # FIX THIS. DOES NOT SUBTRACT META DATA OR WORD FREQS!
+        # DO UNIQ CHECK SOMEWHERE ELSE
+        
         unique = True
-        w = [e for e in window if e not in (LACUNA, BUFFER)]
+        #""" Filter metasymbols from the context """
+        #obsolete
+        #w = [e for e in window if e not in ()]
+        b = {False: ('_', '_'), True: bigram}
+
+        try:
+            #if self.formulaic_filter:
+            #    if window in self.WINS[bigram]:
+            #        unique = False
+            self.WINS[bigram].append(window)
+        except KeyError:
+            self.WINS[bigram] = [window]
+        finally:
+            pass#bigram = b[unique]
+
+        '''
         if bigram not in self.WINS.keys():
-            self.WINS[bigram] = [w]
+            self.WINS[bigram] = [window]
         else:
-            if w in self.WINS[bigram]:
+            if window in self.WINS[bigram]:
                 unique = False
-            self.WINS[bigram].append(w)
-        return unique
+            self.WINS[bigram].append(window)'''
+        return bigram
 
     def score_bigrams(self, measure):
         """ Score bigrams by using class ´measure´ """
-        print('counting bigrams ...')
+        print('Counting bigrams ...')
         
         self.measure = measure.__name__
         if HIDE_MIN_SCORE:
@@ -903,21 +992,30 @@ class Associations:
         if not self.text:
             print('Input text not loaded.')
             sys.exit()
-
-        def _count_repeating_info(bigram):
-            pass
-        
-        def _count_repeating_info_(bigram):
-            pass
         
         def _check_formulaic(bigram, window):
             # DOCUMENT
             if self.formulaic_measure is not None:
-                uniq_window = self._similarities(bigram, window)
-                if self.formulaic_filter and not uniq_window:
-                    bigram = ('_', '_')
+                bigram = self._similarities(bigram, window)
+                #if self.formulaic_filter and not uniq_window:
+                #    bigram = ('_', '_')
             return bigram
-            
+
+        def _gather_meta(bigram, meta):
+            """ Gather and count metadata for each bigram:
+            force to increase performance """
+            try:
+                self.metadata[bigram][meta] += 1
+            except:
+                try:
+                    self.metadata[bigram].update({meta: 1})
+                except:
+                    self.metadata[bigram] = {meta: 1}
+                finally:
+                    pass
+            finally:
+                pass
+        
         def scale(bf, distance):
             """ Scale bigram frequency with window size. Makes the
             scores comparable with NLTK/Collocations PMI measure """
@@ -933,16 +1031,21 @@ class Associations:
             """ Symmetric window """
             wz = self.windowsize - 1
             for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
+                if w[0] == LINEBREAK:
+                    if self.metalist:
+                        meta = tuple(self.metalist.pop(0))
                 if self._is_wordofinterest(w[wz], 1) and \
                    self._has_condition(w[0:wz]+w[wz+1:]):
                     for bigram in itertools.product([w[wz]], w[0:wz]+w[wz+1:]):
+                        if self.metalist:
+                            _gather_meta(bigram, meta)
                         yield _check_formulaic(bigram, w[0:wz]+w[wz+1:])
-
+  
         def count_bigrams_symmetric_dist():
             """ Symmetric window and distance tracking. """
 
             def chain(w1, w2):
-                """ Make a zip/convolution-chain of two lists.
+                """ Make a zip/convolution chain of two lists.
                 [a, b], [c, d] -> [a, c, b, d] """
                 chain = [' '] * len(w1+w2)
                 chain[::2] = w1
@@ -953,6 +1056,9 @@ class Associations:
             for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
                 left = list(w[0:wz])
                 right = list(w[wz+1:])
+                if w[0] == LINEBREAK:
+                    if self.metalist:
+                        meta = tuple(self.metalist.pop(0))
                 if self._is_wordofinterest(w[wz], 1) and \
                    self._has_condition(left+right):
                     for bigram in itertools.product([w[wz]], left+right):
@@ -965,18 +1071,28 @@ class Associations:
                         performance """
                         #if not uniq_window:
                         #    bigram = ('_', '_')
+                        if self.metalist:
+                            _gather_meta(bigram, meta)
+                            
                         try:
                             self.distances[bigram].append(min_dist)
                         except:
                             self.distances[bigram] = [min_dist]
                         finally:
-                            yield bigram
+                            yield _check_formulaic(bigram, left+right)
 
         def count_bigrams_forward():
             """ Calculate bigrams within each forward-looking window """
             for w in zip(*[self.text[i:] for i in range(self.windowsize)]):
+                if w[0] == LINEBREAK:
+                    """ Keep track of lines and their metadata """
+                    if self.metalist:
+                        meta = tuple(self.metalist.pop(0))
                 if w[0] in self.words[1] and self._has_condition(w[1:]):
                     for bigram in itertools.product([w[0]], w[1:]):
+                        if self.metalist:
+                            """ If metadata is available, store it """
+                            _gather_meta(bigram, meta)
                         yield _check_formulaic(bigram, w[1:])
 
         def count_bigrams_forward_dist():
@@ -985,10 +1101,15 @@ class Associations:
             tracking is not included into count_bigrams_forward()
             for better efficiency """
             for w in zip(*[self.text[i:] for i in range(self.windowsize)]):
+                if w[0] == LINEBREAK:
+                    if self.metalist:
+                        meta = tuple(self.metalist.pop(0))
                 if w[0] in self.words[1] and self._has_condition(w[1:]):
                     bigrams = enumerate(itertools.product([w[0]], w[1:]))
                     for bigram in bigrams:
                         bg = _check_formulaic(bigram[1], w[1:])
+                        if self.metalist:
+                            _gather_meta(bigram, meta)
                         """ Force items into dictionary as it is faster
                         than performing key comparisons """
                         try:
@@ -1011,7 +1132,7 @@ class Associations:
                 bigram_freqs = Counter(count_bigrams_forward())
 
         """ Make dictionary for JSON """
-        print('calculating scores ...')
+        print('Calculating scores ...')
         w1list, w2list = [], []
         F_MEASURE = self.formulaic_measure
         for bigram in bigram_freqs.keys():
@@ -1049,7 +1170,11 @@ class Associations:
         """ Store words of interest for JSON """
         self.scored['words1'] = list(set(w1list))
         self.scored['words2'] = list(set(w2list))
-
+        #print(self.metadata[('zakāru', DEBUG)])
+        #print(len(self.metadata[('zakāru', DEBUG)]))
+        #print(bigram_freqs[('zakāru', DEBUG)])
+        #print(Counter(X))
+        
     """ ================================================================
     Score table processing =============================================
     ================================================================ """
@@ -1097,13 +1222,13 @@ class Associations:
         """ Use self.scored if imported JSON is not given.
         Apply word filters if JSON is loaded """
 
-        print('generating {} matrix ...'.format(value))
+        print('Generating {} matrix ...'.format(value))
         self.output_format = 'matrix'
         table, from_json, words1, words2 = self._check_table(table)
         rows = [[value.upper() + ' MATRIX W1 ->']\
                 + ['{}'.format(w + ' ' + table['translations'][w])\
                    for w in words2]]
-        
+
         for w1 in words1:
             row = []
             for w2 in words2:
@@ -1145,7 +1270,43 @@ class Associations:
                 diff.append(len(set(word)) / len(word))
             return sum(diff) / len(diff)
 
-        print('generating score table ...')
+        def _beautify_meta(bigram):
+            """ Pretty print metadata; calculate distribution for
+            each keyword : collocate pair (1) period-wise,
+            (2) genre-wise and (3) period-genre-wise """
+            
+            def _sort(d):
+                """ Sort frequency data by frequency """
+                return sorted([[d[x], x] for x in d.keys()], reverse=True) 
+
+            def _join(key):
+                """ Join tuple keys """
+                if isinstance(key, tuple):
+                    return ' '.join(key)
+                else:
+                    return key
+            
+            metas = [] 
+            formatted = {'period': {}, 'genre' : {}, 'combo' : {}}
+
+            if not self.metadata:
+                return ''
+            else:
+                for k, v in self.metadata[bigram].items():
+                    m = {'period': k[0], 'genre': k[1], 'combo': k}
+                    for metatype, val in m.items():                        
+                        if val not in formatted[metatype].keys():
+                            formatted[metatype][val] = v
+                        else:
+                            formatted[metatype][val] += v
+                            
+                for key in sorted(m.keys()):
+                    metas.append(', '.join(['%s (%s)' % (_join(x[1]), x[0])\
+                                    for x in _sort(formatted[key])]))
+                return metas
+
+        
+        print('Generating score table ...')
         #table, from_json, words1, words2 = self._check_table(table)
         if table is None:
             table = self.scored
@@ -1162,9 +1323,10 @@ class Associations:
             """ For Oracc """
             header = ['word1', 'attr1', 'word2', 'attr2',
                       'word1 freq', 'word2 freq', 'bigram freq',
-                      'score trimmed', 'distance', 'similarity', 'url']
+                      'score trimmed', 'distance', 'similarity',
+                      'period', 'genre', 'combined', 'url']
             
-            sort_indices = [0, -4]
+            sort_indices = [0, -7]
 
         self.output_format = 'scores'
         self.output.append('\t'.join([_add_prefix(x) for x in header]))
@@ -1172,6 +1334,7 @@ class Associations:
         rows = []
         for w1 in table['collocations'].keys():
             for w2 in table['collocations'][w1].keys():
+                combined, genre, period = _beautify_meta((w1, w2))
                 bigram = table['collocations'][w1][w2]
                 freqs = table['freqs']
                 items = {'word1': w1,
@@ -1186,7 +1349,10 @@ class Associations:
                          'score': '{0:.16f}'.format(bigram['score']),#float(bigram['score']),
                          'score2': float('{0:.16f}'.format(bigram['score'])),#float(bigram['score']),
                          'distance': bigram['distance'],
-                         'similarity': bigram['similarity'],
+                         'similarity': self._trim_float(bigram['similarity']),
+                         'period': period,
+                         'genre': genre,
+                         'combined': combined,
                          'url': _make_korp_oracc_url(w1, w2, self.windowsize-2)}
                 rows.append([items[key] for key in header])
                 
@@ -1264,7 +1430,6 @@ class Associations:
         return self.has_translation(postag)
 
 def demo():
-    """
     a = Associations()
     a.set_window(size=10, symmetry=False)
     lemma_position = 2
@@ -1284,7 +1449,4 @@ def demo():
     print(vt)
     a.write_tsv('lauta')
     
-    """
-    pass
-
 demo()
