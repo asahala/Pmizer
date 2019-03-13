@@ -19,7 +19,6 @@ import numpy as np
 from numpy.linalg import norm
 from collections import Counter
 from sklearn.decomposition import TruncatedSVD
-from sklearn.metrics.pairwise import cosine_similarity
 
 BUFFER = '<BF>'
 LOGBASE = 2
@@ -217,7 +216,7 @@ class PMI2VEC:
             print(np.dot(vec1, vec2 ) / (norm(vec1) * norm(vec2)))
 
 def demo():
-    """ How to build and sace vectors from new text """
+    """ How to build and save vectors from new text """
     a = PMI2VEC()
     txt = 'Tiglath-pileserSargon_texts'
     a.score_bigrams(txt, measure=PPMI, windowsize=5, symmetry=True)
