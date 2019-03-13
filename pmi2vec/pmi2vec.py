@@ -5,8 +5,8 @@
 PMI2VEC -- asahala 2019-03-14
 
 Builds word vectors from Morfessor-preprocessed data
-by using pointwise mutual information and single value
-decomposition.
+by using pointwise mutual information and singular
+value decomposition.
 
 ================================================= """
 
@@ -34,6 +34,9 @@ def trim_float(number):
         return number
     else:
         return float('{0:.3f}'.format(number))
+
+
+# TODO: Add more measures
 
 class PPMI:
     """ Positive Pointwise Mutual Information.
