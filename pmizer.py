@@ -12,26 +12,27 @@ import json
 import re
 import godlist
 try:
-    from dictionary import dct
+    from dictionary import root as dct
 except ImportError:
     print('dictionary.py not found!')
     dct = {}
 
-__version__ = "2018-10-03"
+__version__ = "2018-10-05"
 print('pmizer.py version %s\n' % __version__)
 
-INDENT = ' '*4            # Indentation depth
-WINDOW_SCALING = False    # Apply window size penalty to scores
+WINDOW_SCALING = True     # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
 LACUNA = '_'              # Symbol for lacunae in cuneiform languages
 BUFFER = '<BF>'           # Buffer symbol; added after each line/text
 LINEBREAK = '<LB>'        # Marks line / text boundaries
-DECIMAL = ','             # Decimal point marker
+DECIMAL = '.'             # Decimal point marker
+INDENT = ' '*4            # Indentation depth
 WRAPCHARS = ['[', ']']    # Wrap translations/POS-tags between these
                           # symbols, e.g. ['"'] for "string". Give two
                           # if beginning and end symbols are different
 MYLLY = False             # Add Mylly-prefixes
 HIDE_MIN_SCORE = True     # Hide minimum scores in matrices
+
 X = []                    # Debugging (store stuff here)
 Z = {}                    # Debugging (store stuff here)
 DEBUG = 'ilu'
@@ -60,9 +61,9 @@ probability that two words are co-occurring within a certain distance
 from each other to p(a)p(b), i.e. the expected chance of those words
 co-occurring independently.
 
-                    p(w1,w2)          
-  PMI(w1,w2) = log ----------         
-                   p(w1)p(w2)
+                   p(w1,w2)          
+  PMI(w1,w2) = ln ----------         
+                  p(w1)p(w2)
 
 PMI score of 0 indicates perfect independence. Scores greater than 0 may
 point to a possible collocation, and scores lesser than 0 indicate that
@@ -223,13 +224,7 @@ Constraints and properties may be set by using the following kwargs:
                     on the window size. With large symmetric windows
                     this can take several minutes or even hours.
 
- ´formulaic_filter´ (bool) if set to True, only one instance is
-                    taken into account from each exactly same formulaic
-                    expression. This will allow one to take a look at
-                    more free language use especially in Akkadian where
-                    formulaic expressions are very common.
-
- ´formulaic_measure´ Gives collocates an additional score depending on
+ ´formulaic_measure´ Gives collocate an additional score depending on
                     how formulaic the context is. Possible choices are
                     (do not use " or ' with these):
 
@@ -240,7 +235,9 @@ Constraints and properties may be set by using the following kwargs:
                     Strict   formulaic : free (ratio)
 
                     See more precise documentation in the comments about
-                    repetitiveness measures.
+                    repetitiveness measures. Note that these measures
+                    are generally useful only with window sizes of
+                    3 or larger.
 
 ========================================================================
 Associations.score_bigrams(measure) ====================================
@@ -401,6 +398,8 @@ def _log(n):
 
 def _make_korp_oracc_url(w1, w2, wz):
     """ Generate URL for Oracc in Korp """
+    w1 = re.sub('(.+)_.+?', r'\1', w1)
+    w2 = re.sub('(.+)_.+?', r'\1', w2)
     base = 'https://korp.csc.fi/test-as/?mode=other_languages#'\
            '?lang=fi&stats_reduce=word'
     cqp = '&cqp=%5Blemma%20%3D%20%22{w1}%22%5D%20%5B%5D%7B0,'\
@@ -412,7 +411,7 @@ def _make_korp_oracc_url(w1, w2, wz):
 
 
 """ ====================================================================
-Word association measures
+Word association measures ==============================================
 ==================================================================== """
 
 class PMI:
@@ -431,6 +430,26 @@ class NPMI:
     @staticmethod
     def score(ab, a, b, cz):
         return PMI.score(ab, a, b, cz) / -_log(ab/cz)
+
+class LMI:
+    """ Pointwise Mutual Information. The score orientation is
+    -log p(a,b) > 0 > -inf """
+    minimum = -math.inf
+
+    @staticmethod
+    def score(ab, a, b, cz):
+        return PMI.score(ab, a, b, cz) * ab
+
+class cPMI:
+    """ Corpus Level Significant PMI as in Damani 2013. According to
+    the original research paper, delta value of 0.9 is recommended """
+    minimum = -math.inf
+
+    @staticmethod
+    def score(ab, a, b, cz):
+        delta = 0.9
+        t = math.sqrt(_log(delta) / (-2 * a))
+        return _log(ab / (a * b / cz) + a * t)
 
 class PMI2:
     """ PMI^2. Fixes the low-frequency bias of PMI and NPMI by squaring
@@ -483,34 +502,35 @@ class PPMI2:
     def score(ab, a, b, cz):
         return 2 ** PMI2.score(ab, a, b, cz)
 
-
 """ ====================================================================
-Repetitiveness measures
+Repetitiveness "Formulaic" measures ====================================
+========================================================================
 
 These can be used to detect and score formulaic expressions. There
-are three measures. In the examples W stands for our word of interest
-and X for its collocate. Other letters represent individual words.
-Note, that the collocate and our word of interest are not part of
-the window! The measure is interested only in the context where they
-co-occur.
+are three measures. In the examples W stands for our keyword
+and X for its collocate. Other letters represent arbitrary words. Note
+that linebreaks and paddings are taken into account, thus a bigram that
+always occurs in a beginning or end of a line and will be considered
+formulaic.
 
 Greedy:
 
     Greedy measure represents the amount of repetitiveness within
-    the contexts where our collocate co-occurs with the word of
-    interest. A score of 1.0 would indicate that the collocate only
-    occurs in formulaic expressions (regardless if there are one
-    or several different expressions). A score of 0.5 would indicte
-    that half of the contexts are repeated. The contexts do not have
-    to be exactly similar in order to be accepted as formulaic, for
-    example, if in one instance one word in the expression would be
-    different, it would not be discarded, but the score would be
-    slightly decreased. 
+    the windows where our bigrams occur. A score of 1.0 would indicate
+    that the collocate only occurs in formulaic expressions (regardless
+    if there are one or several different expressions!). A score
+    of 0.5 indicates that half of the contexts are repeated. The
+    contexts do not have to be exactly similar in order to be
+    accepted as formulaic, e.g. if in some instance one
+    word in the expression is different it will only slightly
+    decrease the repetitiveness score (as in the case below).
 
-             a   b   W   c   d    X
-             a   b   W   c   d    X
-             a   b   W   c   e    X
-    sim.     1.0 1.0 _   1.0 0.66 _       = 0.916 (avg)
+             symmetric window of 3
+
+             a   b   W   d    X
+             a   b   W   d    X
+             a   b   W   e    X
+    sim.     1.0 1.0 _   0.66 _   --> repetitiveness: 0.89 (avg)
 
 
 Strict:
@@ -530,65 +550,54 @@ Lazy:
 
     Lazy measure represents the percentage of repetitive content,
     but it does not take into account one instance of each repeated
-    word in the same position in an expression. Thus, a score of 0.583
-    would indicate that 58.3% of the content in expressions is repeated.
+    word in the same position in an expression. Thus, a score of 0.56
+    would indicate that 56% of the content in expressions is repeated.
 
-             a    b    W    c    d     X
-             a    b    W    c    d     X 
-             a    b    W    c    e     X
-    sim.     0.66 0.66 _    0.66 0.33  X   = 0.583
+             a    b    W   d    X   
+             a    b    W   d    X
+             a    b    W   e    X 
+    sim.     0.66 0.66 _   0.33 _   = 0.56 (avg)
     
-    The greedy and lazy measures can give quite a different results.
+    The greedy and lazy measures can give quite different results.
     In the following, greedy indicates that 100% of the expressions
     are formulaic, while lazy indicates thet 50% of the content is
     repeated.
 
-    Greedy   a    b    W    c    d     X
-             a    b    W    c    d     X 
-             1.0  1.0  _    1.0  1.0   _   = 1.0
+    Greedy   a    b    W    d     X
+             a    b    W    d     X 
+             1.0  1.0  _    1.0   _   = 1.0
 
-    Lazy     a    b    W    c    d     X
-             a    b    W    c    d     X 
-             0.5  0.5  _    0.5  0.5   _   = 0.5
-
-    NOTE that you can force the similarity score to 1.0 also in
-    lazy measure in such cases where only one word occurs in the
-    same position in every expression. This is done by setting
-    formulaic_forced = True
-
-    This makes the overall scores more difficult to interprete,
-    but it reveals instantly those words that always occur in
-    only one expression.
+    Lazy     a    b    W    d     X
+             a    b    W    d     X 
+             0.5  0.5  _    0.5   _   = 0.5
     
 ==================================================================== """
 
 class FormulaicMeasures:
-
     @staticmethod
-    def compensate(words):
-        """ Neglect metasymbols and tags """
-        compensate = 0
-        for symbol in [LACUNA, BUFFER, LINEBREAK]:
-            compensate += max(words.count(symbol) - 1, 0)
-        return compensate
+    def compensate(words, collocate, uniqs):
+        """ Compensate window matrix counts:
+        ´compensation´ is a number of each word that should be
+        ignored in counting (metasymbols, collocates) """            
+        compensation = uniqs
+        for symbol in [LACUNA, BUFFER, LINEBREAK, collocate]:
+            compensation += max(words.count(symbol) - 1, 0)
+        return compensation
 
 class Greedy:
-
-    ## DO NOT USE
     @staticmethod
-    def score(windows, forced):
-        reps = []
+    def score(windows, forced, collocate):
+        repeated = []
         for words in zip(*windows[::-1]):
             counts = Counter(words).values()
             singles = len([x for x in counts if x == 1])
-            reps.append(1-(singles/len(words)))
-        return sum(reps) / len(reps)
+            repeated.append(1-(singles/len(words)))
+            if collocate == 'wēdu': print(words)
+        return sum(repeated) / len(repeated)
 
 class Strict:
-
-    ## DO NOT USE
     @staticmethod
-    def score(windows, forced):
+    def score(windows, forced, collocate):
         all_ = len(windows)
         uniqs = len(set([''.join(x) for x in windows]))
         if uniqs == 1:
@@ -597,21 +606,18 @@ class Strict:
             return 1 - ((all_ - uniqs) / all_)
 
 class Lazy:
-
     @staticmethod
-    def score(windows, forced):
-        #print('\n')
-        #print('\n')
-        #for x in windows:
-        #    print(x)
+    def score(windows, forced, collocate):
         diffs = []
-        for word in zip(*windows[::-1]):
-            uniques = len(set(word)) + FormulaicMeasures.compensate(word)
-            if uniques == 1:
-                uniques = forced
-            diffs.append((len(word) - uniques) / len(word))
+        for window in zip(*windows[::-1]):
+            """ Count the number of unique words in transposed window matrix
+            ie. stack windows and count uniques, see compensate() for more
+            info """
+            uniqs = len(set(window))
+            compensated = FormulaicMeasures.compensate(window, collocate, uniqs)
+            diffs.append((len(window) - compensated) / len(window))
             """ Uncomment to see probabilities """
-            #print('\t'.join(word), (len(word) - uniques) / len(word))
+            #print('\t'.join(window), (len(window) - compensated) / len(window))
         return sum(diffs) / len(diffs)
 
 class Associations:
@@ -630,7 +636,7 @@ class Associations:
         self.freq_threshold = 5
         self.symmetry = False    
         self.words = {1: [], 2: []}
-        self.conditions = {'stopwords': ['', LACUNA, BUFFER],
+        self.conditions = {'stopwords': ['', LACUNA, BUFFER, LINEBREAK],
                            'stopwords_regex': [],
                            'conditions': [],
                            'conditions_regex': []}
@@ -644,10 +650,11 @@ class Associations:
         self.date = datetime.datetime.now()
         self.WINS = {}
         self.formulaic_measure = None ## DOCUMENT THIS
-        self.formulaic_filter = False ## DOCUMENT THIS
         self.formulaic_forced = False
+        self.metalist = [] # container for metadata
         self.metadata = {}
-        
+        self.documents = []
+
     def __repr__(self):
         debug = []
         tab = max([len(k)+2 for k in self.__dict__.keys()])
@@ -706,7 +713,7 @@ class Associations:
         maxlen = [] # line lengths
         lines = 0
         meta = None # no metadata available
-        self.metalist = [] # container for metadata
+        lacunae = 0
         for l in self._readfile(filename):
             linedata = l.split('\t')
             line = linedata[-1]
@@ -716,16 +723,29 @@ class Associations:
             if meta is not None:
                 self.metalist.append(self._abbreviate(meta))
                 
-            lemmas = line.strip('\n').split(' ')
-            #if len(lemmas) > maxlen:
+            lemmas = line.strip('\n').strip().split(' ')
+
+            """ Store documents for TF-IDF """
+            self.documents.append(lemmas)
+
+            lacunae += lemmas.count('_')
             maxlen.append(len(lemmas))
             self.text.extend([LINEBREAK] + lemmas + [BUFFER] * self.windowsize)
             buffers += 1
             lines += 1
             
-        self.corpus_size = len(self.text) - (buffers * self.windowsize)
+        self.corpus_size = len(self.text) - (buffers * self.windowsize) - lines
         self.word_freqs = Counter(self.text)
 
+        """ Note that these statistics are sensitive to linebreaks,
+        buffers etc. metasymbols, remember to subtract them from the
+        results in case you add new meta symbols; e.g. you have to
+        subtract 3 from unique lemmata because there are <BF>, <LB> and '_'
+        """
+
+        """ Save size of true useable corpus (place holders removed) """
+        self.corpus_size_true = self.corpus_size - lacunae
+        
         freqs = sorted([v for k, v in self.word_freqs.items()])
         print('-'*60)
         print('Corpus statistics:')
@@ -736,10 +756,12 @@ class Associations:
         print('%sAverage line length: %i words' % (INDENT,
                             sum(maxlen)/len(maxlen)))
         print('%sWord count: %i' % (INDENT, self.corpus_size))
-        print('%sUnique lemmata: %i' % (INDENT, len(self.word_freqs.keys())))
+        print('%sUnique lemmata: %i' % (INDENT, len(self.word_freqs.keys()) -3))
         print('%sMedian word frequency: %i' % (INDENT,
                             freqs[int(len(freqs)/2)]))
         print('%sAverage word frequency: {0:.2f}'.format(sum(freqs)/len(freqs)) % INDENT)
+        print('%sLacunae or underscores: %i' % (INDENT, lacunae))
+        print('%sLemmas (not lacunae or underscores): %i' % (INDENT, self.corpus_size_true))
         print('-'*60 + '\n')
         
     def read_vrt(self, filename, lemmapos, pospos, delimiter='text'):
@@ -786,7 +808,7 @@ class Associations:
         else:
             fn = filename
             
-        print('Writing %s...' % (fn + '.tsv'))
+        print('Writing %s ...' % (fn + '.tsv'))
         self._writefile(fn + '.tsv', '\n'.join(self.output))
         self._writefile(fn + '.log', self.__repr__())
 
@@ -931,8 +953,82 @@ class Associations:
             else:
                 print('positive_condition must be True or False')
                 sys.exit(1)
-        
 
+    """ ================================================================
+    Stopword functions
+    ================================================================ """
+
+    def sampling(self, sample=0.001):
+        print('test')
+        print(self.corpus_size_true)
+        print(len(self.word_freqs))
+        for word, freq in self.word_freqs.items():
+            zwi = freq / self.corpus_size_true
+            U = math.sqrt(zwi/sample)
+            B = sample/zwi
+            #pwi = (math.sqrt(zwi/sample) + 1) * (sample/zwi)
+            pwi = (U + 1) / B
+            if pwi > 10:
+                pass#print(word, self.get_translation(word), pwi, freq)
+
+
+    def tf_idf(self):
+        tf_idfs = {}
+        w = []
+        for document in self.documents:
+            N = len(document)
+           
+            for word in set(document):
+                t = document.count(word)
+                tf_idfs.setdefault(word, {'tf': [], 'found_in': 0})
+                tf_idfs[word]['tf'].append(t/N)
+                tf_idfs[word]['found_in'] += 1
+            
+        for word, vals in tf_idfs.items():
+            scores = []
+            for tf in vals['tf']:
+                scores.append(tf * math.log(len(self.documents)/vals['found_in'], 10))
+            w.append([sum(scores), word])
+
+        for x in sorted(w, reverse=True)[0:1000]:
+            pass#print(x, self.word_freqs[x[1]])
+        
+    """ ================================================================
+    Paradigmatic test
+    ================================================================ """
+
+    def paradigmatic(self):
+        """ First iteration """
+        scores = {}
+        contexts = []
+        wz = self.windowsize - 1
+        for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
+            scores[w[wz]] = []
+            if self._is_wordofinterest(w[wz], 1):
+                context = w[0:wz]+w[wz+1:]
+                contexts.append(set(context))
+
+        """ Second iteration """
+        for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
+            if w[0] == LINEBREAK:
+                if self.metalist:
+                    meta = tuple(self.metalist.pop(0))
+            context = set(w[0:wz]+w[wz+1:])
+            inter = 0
+            for c in contexts:
+                inter += len(context.intersection(c))
+            scores[w[wz]].append(inter)
+
+        vk = []
+        for k, v in scores.items():
+            vk.append([sum(v)/len(v), k])
+        i = 0
+        for x in sorted(vk, reverse=True):
+            print(x[1] + ' ' + self.get_translation(x[1]), '\t', x[0])
+            i += 1
+            if i == 50:
+                break
+            
     """ ================================================================
     Bigram counting
 
@@ -944,41 +1040,6 @@ class Associations:
     
     ================================================================ """
     
-    def _similarities(self, bigram, window):
-        """ Store all windows to self.WINS, if formulaic_filter is
-        on, discard all bigrams that appear more than once in the
-        same window; note that removing bigrams distort the
-        association measures, as the total frequencies are not
-        adjusted """
-
-        # FIX THIS. DOES NOT SUBTRACT META DATA OR WORD FREQS!
-        # DO UNIQ CHECK SOMEWHERE ELSE
-        
-        unique = True
-        #""" Filter metasymbols from the context """
-        #obsolete
-        #w = [e for e in window if e not in ()]
-        b = {False: ('_', '_'), True: bigram}
-
-        try:
-            #if self.formulaic_filter:
-            #    if window in self.WINS[bigram]:
-            #        unique = False
-            self.WINS[bigram].append(window)
-        except KeyError:
-            self.WINS[bigram] = [window]
-        finally:
-            pass#bigram = b[unique]
-
-        '''
-        if bigram not in self.WINS.keys():
-            self.WINS[bigram] = [window]
-        else:
-            if window in self.WINS[bigram]:
-                unique = False
-            self.WINS[bigram].append(window)'''
-        return bigram
-
     def score_bigrams(self, measure):
         """ Score bigrams by using class ´measure´ """
         print('Counting bigrams ...')
@@ -993,12 +1054,14 @@ class Associations:
             print('Input text not loaded.')
             sys.exit()
         
-        def _check_formulaic(bigram, window):
-            # DOCUMENT
+        def _check_formulaic(bigram, window, index):
+            """ Store windows only if formulaic_measures are used,
+            otherwise skip this to save memory and time. Remove
+            index of the collocate from the window to preserve only
+            context of the bigram """
             if self.formulaic_measure is not None:
-                bigram = self._similarities(bigram, window)
-                #if self.formulaic_filter and not uniq_window:
-                #    bigram = ('_', '_')
+                window.pop(index)
+                self.WINS.setdefault(bigram, []).append(window)
             return bigram
 
         def _gather_meta(bigram, meta):
@@ -1036,10 +1099,10 @@ class Associations:
                         meta = tuple(self.metalist.pop(0))
                 if self._is_wordofinterest(w[wz], 1) and \
                    self._has_condition(w[0:wz]+w[wz+1:]):
-                    for bigram in itertools.product([w[wz]], w[0:wz]+w[wz+1:]):
+                    for index, bigram in enumerate(itertools.product([w[wz]], w[0:wz]+w[wz+1:])):
                         if self.metalist:
                             _gather_meta(bigram, meta)
-                        yield _check_formulaic(bigram, w[0:wz]+w[wz+1:])
+                        yield _check_formulaic(bigram, list(w[0:wz]+w[wz+1:]), index)
   
         def count_bigrams_symmetric_dist():
             """ Symmetric window and distance tracking. """
@@ -1061,25 +1124,14 @@ class Associations:
                         meta = tuple(self.metalist.pop(0))
                 if self._is_wordofinterest(w[wz], 1) and \
                    self._has_condition(left+right):
-                    for bigram in itertools.product([w[wz]], left+right):
-                        bigram = _check_formulaic(bigram, left+right)
-                        #if self.formulaic_measure is not None:
-                        #    uniq_window = self._similarities(bigram, left+right)
+                    for index, bigram in enumerate(itertools.product([w[wz]], left+right)):
+                        bigram = _check_formulaic(bigram, left+right, index)
                         context = chain(left[::-1], right)
-                        min_dist = math.floor(context.index(bigram[1])/2) +1
-                        """ Force items into dictionary for better
-                        performance """
-                        #if not uniq_window:
-                        #    bigram = ('_', '_')
+                        min_dist = math.floor(context.index(bigram[1])/2) + 1
                         if self.metalist:
                             _gather_meta(bigram, meta)
-                            
-                        try:
-                            self.distances[bigram].append(min_dist)
-                        except:
-                            self.distances[bigram] = [min_dist]
-                        finally:
-                            yield _check_formulaic(bigram, left+right)
+                        self.distances.setdefault(bigram, []).append(min_dist)
+                        yield bigram
 
         def count_bigrams_forward():
             """ Calculate bigrams within each forward-looking window """
@@ -1089,11 +1141,11 @@ class Associations:
                     if self.metalist:
                         meta = tuple(self.metalist.pop(0))
                 if w[0] in self.words[1] and self._has_condition(w[1:]):
-                    for bigram in itertools.product([w[0]], w[1:]):
+                    for index, bigram in enumerate(itertools.product([w[0]], w[1:])):
                         if self.metalist:
                             """ If metadata is available, store it """
                             _gather_meta(bigram, meta)
-                        yield _check_formulaic(bigram, w[1:])
+                        yield _check_formulaic(bigram, list(w[1:]), index)
 
         def count_bigrams_forward_dist():
             """ Calculate bigrams within each forward-looking window,
@@ -1105,19 +1157,13 @@ class Associations:
                     if self.metalist:
                         meta = tuple(self.metalist.pop(0))
                 if w[0] in self.words[1] and self._has_condition(w[1:]):
-                    bigrams = enumerate(itertools.product([w[0]], w[1:]))
-                    for bigram in bigrams:
-                        bg = _check_formulaic(bigram[1], w[1:])
+                    for index, bigram in enumerate(itertools.product([w[0]], w[1:])):
+                        bg = _check_formulaic(bigram, list(w[1:]), index)
                         if self.metalist:
-                            _gather_meta(bigram, meta)
-                        """ Force items into dictionary as it is faster
-                        than performing key comparisons """
-                        try:
-                            self.distances[bg].append(bigram[0] + 1)
-                        except:
-                            self.distances[bg] = [bigram[0] + 1]
-                        finally:
-                            yield bg
+                            _gather_meta(bg, meta)
+                        d = index + 1
+                        self.distances.setdefault(bg, []).append(d)
+                        yield bg
 
         """ Selector for window type and distance tracking """
         if self.symmetry:
@@ -1140,10 +1186,11 @@ class Associations:
             if self._is_valid(w1, w2, bigram_freqs[bigram]):
                 if self.formulaic_measure is not None:
                     formulaic_measure = F_MEASURE.score(self.WINS[bigram],
-                                                        self.formulaic_forced)
+                                                        self.formulaic_forced,
+                                                        bigram[-1])
                 else:
-                    formulaic_measure = ''
-                    
+                    formulaic_measure = 0
+                fm = max(1-formulaic_measure, 00000.1)
                 distance = self._get_distance(bigram)
                 freq_w1 = self.word_freqs[w1]
                 freq_w2 = self.word_freqs[w2]               
@@ -1213,7 +1260,65 @@ class Associations:
             words1 = self._filter_json(table['words1'], 1)
             words2 = self._filter_json(table['words2'], 2)
         return table, from_json, words1, words2
+
+    def intersect(self):
+        """ Create all unique permutations from keyword and initialize
+        a dictionary out of them; FIX """
         
+        def clean_(pair):
+            if pair[0] != pair[1]:
+                return tuple(sorted(pair))
+            
+        table = self.scored
+        keywords = sorted(table['words1'])
+        p = itertools.product(keywords, keywords)
+        perms = list(set([clean_(x) for x in list(p)]))
+        intersections = {}
+
+        for item in perms:
+            if item is not None:
+                keyword1 = item[0]
+                keyword2 = item[1]
+                if keyword1 not in intersections.keys():
+                    intersections[keyword1] = {keyword2: []}
+                else:
+                    intersections[keyword1].update({keyword2: []})
+
+
+        def build_set(collocates):    
+            for c in collocates.keys():
+                if collocates[c]['score'] > 0.0005:
+                    yield c
+
+        duplos = []
+        
+        for key1 in table['collocations'].keys():
+            for key2 in intersections.keys():
+                k = tuple(sorted([key1, key2]))
+                if k in perms:#key1 != key2:
+                    keys = sorted([key1, key2])
+                    key1_set = set(build_set(table['collocations'][key1]))
+                    key2_set = set(build_set(table['collocations'][key2]))
+                    inters_ = list(key1_set.intersection(key2_set))
+                    #intersections[keys[0]][keys[1]] = intersection
+
+
+                    if inters_ and sorted([key1, key2]) not in duplos:
+                        print(key1, key2)
+                        d = []
+                        for item in inters_:
+                            c = table['collocations']
+                            t = table['translations'][item]
+                            s1 = c[key1][item]['score']
+                            s2 = c[key2][item]['score']
+                            avg = self._trim_float((s1+s2)/2)
+                            d.append([str(avg), item, t])
+                        x = sorted(d, reverse=True)
+                        l = '\n'.join(['\t'.join(a) for a in x])
+                        print(l)
+                        print('\n')
+                        duplos.append(sorted([key1, key2]))
+                        
     def print_matrix(self, value, table=None):
         """ Make a collocation matrix of two sets of words of
         interest. Argument ´value´ must be ´score´, ´frequency´
@@ -1251,7 +1356,6 @@ class Associations:
             self.output.append('\t'.join([str(m) for m in r]))
 
     def print_scores(self, limit=10000, table=None):
-    
         def _add_prefix(key):
             ''' Add Mylly-prefixes '''
             if not MYLLY:
@@ -1289,8 +1393,13 @@ class Associations:
             metas = [] 
             formatted = {'period': {}, 'genre' : {}, 'combo' : {}}
 
+            #
+            # FIX ME: ASYMMETRIC WINDOW CAUSES KEYERROR
+            #
+            
+
             if not self.metadata:
-                return ''
+                return ['', '', '']
             else:
                 for k, v in self.metadata[bigram].items():
                     m = {'period': k[0], 'genre': k[1], 'combo': k}
@@ -1430,6 +1539,7 @@ class Associations:
         return self.has_translation(postag)
 
 def demo():
+    """
     a = Associations()
     a.set_window(size=10, symmetry=False)
     lemma_position = 2
@@ -1449,4 +1559,5 @@ def demo():
     print(vt)
     a.write_tsv('lauta')
     
-demo()
+    """
+    pass
