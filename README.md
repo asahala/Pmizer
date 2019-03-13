@@ -19,4 +19,6 @@ Features:
 Todo:
 - Period/genre distributions
 
-dadadadada
+# PMI2VEC
+
+Build word vectors from PMI
