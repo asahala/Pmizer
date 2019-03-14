@@ -16,10 +16,12 @@ import math
 import json
 import gzip
 import numpy as np
+import dictionary
 from numpy.linalg import norm
 from collections import Counter
 from sklearn.decomposition import TruncatedSVD
 
+LACUNA = '_'
 BUFFER = '<BF>'
 LOGBASE = 2
 
@@ -152,7 +154,7 @@ class PMI2VEC:
         for bigram in morphs.keys():
             w1, w2 = bigram
             """ Ignore buffer symbols """
-            if BUFFER not in bigram:
+            if BUFFER not in bigram and LACUNA not in bigram:
                 bf = morphs[bigram]
                 w1_freq = self.morph_freqs[w1]
                 w2_freq = self.morph_freqs[w2]
@@ -216,8 +218,19 @@ class PMI2VEC:
         vec1 = self.word_vectors.get(word1, None)
         vec2 = self.word_vectors.get(word2, None)
         if all((vec1, vec2)):
-            print(np.dot(vec1, vec2 ) / (norm(vec1) * norm(vec2)))
+            return np.dot(vec1, vec2 ) / (norm(vec1) * norm(vec2))
 
+    def get_best(self, word):
+        table = []
+        for word2 in self.word_vectors.keys():
+            similarity = self.cosine_similarity(word, word2)
+            table.append((similarity, word2, dictionary.dct.get(word2, None)))
+
+        t = sorted(table, reverse=True)
+        for x in t[:15]:
+            print(x)
+
+    
 def demo():
     """ How to build and save vectors from new text """
     a = PMI2VEC()
@@ -230,11 +243,12 @@ def demo2():
     """ How to load vectors and test similarities """
     a = PMI2VEC()
     a.load_vectors('tiglath.vec.gzip')
-    a.cosine_similarity('bēlu', 'šarru')       # lord and king: very high similarity
-    a.cosine_similarity('Akkad_P', 'Šumeru_P') # Sumer and Akkad: high similarity
-    a.cosine_similarity('kaspu', 'hurāṣu')     # silver and gold: high similarity
-    a.cosine_similarity('abu', 'māru')         # father and son: medium-low similarity
-    a.cosine_similarity('kakku', 'qabû')       # weapon and speak: very low similarity
+    a.get_best('nakru')
+    #a.cosine_similarity('bēlu', 'šarru')       # lord and king: very high similarity
+    #a.cosine_similarity('Akkad_P', 'Šumeru_P') # Sumer and Akkad: high similarity
+    #a.cosine_similarity('kaspu', 'hurāṣu')     # silver and gold: high similarity
+    #a.cosine_similarity('abu', 'māru')         # father and son: medium-low similarity
+    #a.cosine_similarity('kakku', 'qabû')       # weapon and speak: very low similarity
 
 #demo()
 demo2()    
