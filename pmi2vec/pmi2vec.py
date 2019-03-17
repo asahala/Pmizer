@@ -152,7 +152,11 @@ class PMI2VEC:
     def score_bigrams(self, filename, measure, windowsize=2,
                       symmetry=False, minfreq=2, words='all'):
         """ This function finds and scores bigrams (or skipgrams) from
-        the given corpus file by using given measure """
+        the given corpus file by using given measure, window size and 
+        symmetry. ´words´ argument does not do anything at the moment.
+        ´minfreq´ can be used to adjust the minimum frequency of b in
+        PMI(a, b) (that is, the collocate frequency) """
+
         self.symmetry = symmetry
         self.window_size = windowsize
         self._read_file(filename)
@@ -165,7 +169,7 @@ class PMI2VEC:
             for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
                 #if w[wz] in self.keywords:
                 for bigram in itertools.product([w[wz]], w[0:wz]+w[wz+1:]):
-                    if self.word_freqs[bigram[-1]] > minfreq:
+                    if self.word_freqs[bigram[-1]] >= minfreq:
                         yield bigram
 
         def get_bigrams_forward():
@@ -173,7 +177,7 @@ class PMI2VEC:
             for w in zip(*[self.text[i:] for i in range(self.window_size)]):
                 #if w[0] in self.keywords:
                 for bigram in itertools.product([w[0]], w[1:]):
-                    if self.word_freqs[bigram[-1]] > minfreq:
+                    if self.word_freqs[bigram[-1]] >= minfreq:
                         yield bigram
 
         def get_subunits(bigrams):
@@ -219,7 +223,8 @@ class PMI2VEC:
         print('> scoring (s)', et)
                 
     def build_vectors(self, value, dimension=300, algorithm='arpack', precombine=False):
-        """ Initialize minimum scores for the matrix """
+        """ ´value´ can be either ´score´ (that is the
+        association measure) or ´bigram_freq´ """
         st = time.time()
 
         if value == 'score':
@@ -253,7 +258,7 @@ class PMI2VEC:
         matrix = svd.fit_transform(matrix)
 
         """ Combine wordform vectors from morph vectors if ´precombine´
-        is set True """
+        is set True, then every morph will not have their own vectors """
         if precombine:
             for word in self.word_freqs.keys():
                 vecs = []
@@ -303,7 +308,16 @@ def demo():
     a.save_vectors('akkadi.vec.gzip')
 
 def query():
-    """ How to load vectors and test similarities """
+    """ How to load vectors and test similarities; use load_dictionary()
+    only if you have translations available (they should be in .tsv like
+
+    kakku     weapon
+    inu       eye
+    kalbu     dog
+
+    If translation file is not available, just uncomment load_dictionary().
+    """
+    
     a = PMI2VEC()
     a.load_dictionary('words_noSynonymsMar19')
     a.load_vectors('akkadi_PMI.vec.gzip')
