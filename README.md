@@ -1,4 +1,4 @@
-# Collocations
+# pmizer.py
 Calculates different word association measures. The window splitting and n-gram finding algorithms are quite well optimized now. Designed specially for cuneiform languages (but not restricted to them). Takes input as a lemmatized text file with lacunae marked as '_'.
 
 Akkadian example:
@@ -19,6 +19,6 @@ Features:
 Todo:
 - Period/genre distributions
 
-# PMI2VEC
+# PMI2VEC/pmi2vec.py
 
 Builds word vectors (embeddings) based PMI scores by using singular value decomposition. Requires numpy and sklearn.
