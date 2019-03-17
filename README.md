@@ -21,4 +21,8 @@ Todo:
 
 # PMI2VEC/pmi2vec.py
 
-Builds word vectors (embeddings) based PMI scores by using singular value decomposition. Requires numpy and sklearn.
+Builds word vectors (embeddings) based on PMI scores by using singular value decomposition. Requires numpy and sklearn. 
+
+Todo:
+- Binary format
+- Merge with pmizer
