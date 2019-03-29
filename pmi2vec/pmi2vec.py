@@ -142,7 +142,7 @@ class PMI2VEC:
             data.write('%i %i\n' % (vector_n, self.dimension))
             for key, value in self.word_vectors.items():
                 # Then for every vector print word and the vector
-                # each float separated by space value[0] = word freq
+                # each float separated by space. value[0] = word freq
                 # value[-1] vector
                 data.write(key + ' ')
                 value[-1].tofile(data, sep=' ')
