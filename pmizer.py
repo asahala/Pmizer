@@ -11,16 +11,17 @@ import math
 import json
 import re
 import godlist
+import random
 try:
     from dictionary import root as dct
 except ImportError:
     print('dictionary.py not found!')
     dct = {}
 
-__version__ = "2018-10-05"
+__version__ = "2019-06-26"
 print('pmizer.py version %s\n' % __version__)
 
-WINDOW_SCALING = True     # Apply window size penalty to scores
+WINDOW_SCALING = True    # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
 LACUNA = '_'              # Symbol for lacunae in cuneiform languages
 BUFFER = '<BF>'           # Buffer symbol; added after each line/text
@@ -179,6 +180,8 @@ Constraints and properties may be set by using the following kwargs:
  ´freq_threshold´   (int) minimum allowed bigram frequency. This can be
                     used to counter the low-frequency bias of certain
                     PMI variants.
+                    
+ ´freq_threshold_collocate´   (int) minimum allowed collocate frequency.
 
  ´words1´ &         (list) words of interest, in other words, the white-
  ´words2´           list of words, which are allowed to exist in the
@@ -405,8 +408,10 @@ def _make_korp_oracc_url(w1, w2, wz):
     cqp = '&cqp=%5Blemma%20%3D%20%22{w1}%22%5D%20%5B%5D%7B0,'\
           '{wz}%7D%20%5Blemma%20%3D%20%22{w2}%22%5D'\
           .format(w1=urllib.parse.quote(w1), w2=urllib.parse.quote(w2), wz=wz)
-    corps = '&corpus=oracc_cams,oracc_dcclt,oracc_ribo,'\
-            'oracc_rinap,oracc_saao,oracc_other&search_tab=1&search=cqp&within=paragraph'
+    corps = '&corpus=oracc_adsd,oracc_ario,oracc_blms,oracc_cams,oracc_caspo,oracc_ctij'\
+            ',oracc_dcclt,oracc_dccmt,oracc_ecut,oracc_etcsri,oracc_hbtin,oracc_obmc,'\
+            'oracc_riao,oracc_ribo,oracc_rimanum,oracc_rinap,oracc_saao,'\
+            'oracc_others&search_tab=1&search=cqp&within=paragraph'
     return base+cqp+corps
 
 
@@ -431,15 +436,6 @@ class NPMI:
     def score(ab, a, b, cz):
         return PMI.score(ab, a, b, cz) / -_log(ab/cz)
 
-class LMI:
-    """ Pointwise Mutual Information. The score orientation is
-    -log p(a,b) > 0 > -inf """
-    minimum = -math.inf
-
-    @staticmethod
-    def score(ab, a, b, cz):
-        return PMI.score(ab, a, b, cz) * ab
-
 class cPMI:
     """ Corpus Level Significant PMI as in Damani 2013. According to
     the original research paper, delta value of 0.9 is recommended """
@@ -460,19 +456,7 @@ class PMI2:
     @staticmethod
     def score(ab, a, b, cz):
         return PMI.score(ab, a, b, cz) - (-_log(ab/cz))
-
-class PMI2_:
-    """ PMI^2. Fixes the low-frequency bias of PMI and NPMI by squaring
-    the numerator to compensate multiplication done in the denominnator.
-    Scores are oriented as: 0 > log p(a,b) > -inf """
-    minimum = -math.inf
     
-    @staticmethod
-    def score(ab, a, b, cz):
-        score = PMI.score(ab, a, b, cz)
-        ind = _log(ab/cz)
-        return -(score / ind)
-
 class PMI3:
     """ PMI^3 (no low-freq bias, favors common bigrams). Scores are
     oriented from 0 > -(k-1)*log p(a,b) > -inf, where the k stands for
@@ -500,7 +484,7 @@ class PPMI2:
     
     @staticmethod
     def score(ab, a, b, cz):
-        return 2 ** PMI2.score(ab, a, b, cz)
+        return math.sqrt(2 ** PMI2.score(ab, a, b, cz))
 
 """ ====================================================================
 Repetitiveness "Formulaic" measures ====================================
@@ -633,7 +617,8 @@ class Associations:
                        'words2': []}
         self.measure = None
         self.windowsize = None
-        self.freq_threshold = 5
+        self.freq_threshold = 3
+        self.freq_threshold_collocate = 5
         self.symmetry = False    
         self.words = {1: [], 2: []}
         self.conditions = {'stopwords': ['', LACUNA, BUFFER, LINEBREAK],
@@ -654,15 +639,19 @@ class Associations:
         self.metalist = [] # container for metadata
         self.metadata = {}
         self.documents = []
+        """ Dictionary of translations """
+        self.translations = dct
 
     def __repr__(self):
+        """ Define what is not shown in .log files """
         debug = []
         tab = max([len(k)+2 for k in self.__dict__.keys()])
         for k in sorted(self.__dict__.keys()):
             if k not in ['scored', 'text', 'regex_stopwords', 'regex_words',
                          'distances', 'anywords', 'anywords1', 'output',
                          'anywords2', 'anycondition', 'word_freqs',
-                         'positive_condition', 'minimum', 'WINS']:
+                         'positive_condition', 'minimum', 'WINS', 'documents',
+                         'translations']:
                 v = self.__dict__[k]
                 debug.append('%s%s%s' % (k, ' '*(tab-len(k)+1), str(v)))
 
@@ -698,7 +687,7 @@ class Associations:
         self.filename = filename
         with open(filename, 'r', encoding="utf-8", errors="ignore") as data:
             print('Reading %s ... \n' % filename)
-            self.text = [BUFFER]*self.windowsize
+            self.text = []#[BUFFER]*self.windowsize
             return data.readlines()
 
     def _writefile(self, fn, content):
@@ -707,10 +696,19 @@ class Associations:
 
     def read_raw(self, filename):
         """ Open raw lemmatized input file with one text per line.
-        Add buffer equal to window size after each text to prevent
-        words from different texts being associated. """
+        Add buffer equal to window size before each text to prevent
+        words from different texts being associated.
+
+        2019-06-26: changed buffering from the end of the line
+                    to the beginning to prevent rare crash that
+                    occurred if the keyword was coincidentally
+                    in the middle of the first symmetric window.
+                    now linebreak is always the first symbol in text.
+
+        """
+        
         buffers = 1
-        maxlen = [] # line lengths
+        maxlen = [] # store line lengths
         lines = 0
         meta = None # no metadata available
         lacunae = 0
@@ -720,6 +718,7 @@ class Associations:
             
             if len(linedata) > 1:
                 meta = linedata[0:-1]
+
             if meta is not None:
                 self.metalist.append(self._abbreviate(meta))
                 
@@ -730,10 +729,13 @@ class Associations:
 
             lacunae += lemmas.count('_')
             maxlen.append(len(lemmas))
-            self.text.extend([LINEBREAK] + lemmas + [BUFFER] * self.windowsize)
+            self.text.extend([LINEBREAK] + [BUFFER] * self.windowsize + lemmas)
             buffers += 1
             lines += 1
-            
+
+        """ Add buffer to the end of the text """
+        self.text.extend([BUFFER] * self.windowsize)
+        
         self.corpus_size = len(self.text) - (buffers * self.windowsize) - lines
         self.word_freqs = Counter(self.text)
 
@@ -765,6 +767,10 @@ class Associations:
         print('-'*60 + '\n')
         
     def read_vrt(self, filename, lemmapos, pospos, delimiter='text'):
+        #
+        # FIX BUFFERING, ADD LINEBREAKS!
+        #
+        
         """ Open VRT file.
 
         ´lemmapos´ (int) indicates the word attribute index for lemmas.
@@ -791,7 +797,7 @@ class Associations:
                     if len(word_attrs) > 3:
                         self.text.append(word_attrs[lemmapos])
                         if pospos is not None:
-                            dct[word_attrs[lemmapos]] = word_attrs[pospos]
+                            self.translations[word_attrs[lemmapos]] = word_attrs[pospos]
                 else:
                     pass
 
@@ -808,9 +814,9 @@ class Associations:
         else:
             fn = filename
             
-        print('Writing %s ...' % (fn + '.tsv'))
-        self._writefile(fn + '.tsv', '\n'.join(self.output))
-        self._writefile(fn + '.log', self.__repr__())
+        print('Writing %s ...' % (fn))
+        self._writefile(fn, '\n'.join(self.output))
+        self._writefile(re.sub('\..+', '', fn) + '.log', self.__repr__())
 
     def import_json(self, filename):
         """ Load lookup table from JSON """
@@ -824,7 +830,13 @@ class Associations:
         with open(filename, 'w', encoding="utf-8") as data:
             json.dump(self.scored, data)
 
-
+    def read_dictionary(self, filename):
+        with open(filename, 'r', encoding="utf-8") as data:
+            for line in data.read().splitlines():
+                if line:
+                    word, translation = line.split('\t')
+                    self.translations[word] = translation
+            
     """ ================================================================
     Properties =========================================================
     ================================================================ """
@@ -878,7 +890,7 @@ class Associations:
     def _get_translation(self, word):
         """ Get translation from dictionary """
         try:
-            translation = '%s%s%s' % (WRAPCHARS[0], dct[word], WRAPCHARS[-1])
+            translation = '%s%s%s' % (WRAPCHARS[0], self.translations[word], WRAPCHARS[-1])
         except:
             translation = '%s?%s' % (WRAPCHARS[0], WRAPCHARS[-1])
         return translation
@@ -917,7 +929,7 @@ class Associations:
     def _is_valid(self, w1, w2, freq):
         """ Validate bigram. Discard stopwords and those which
         do not match with the word of interest lists """
-        if freq >= self.freq_threshold:    
+        if freq >= self.freq_threshold and self.word_freqs[w2] >= self.freq_threshold_collocate:    
             if not self.anywords:
                 return not self._meets_anycondition('stopwords', [w1, w2])
             elif self.anywords and self.anywords2:
@@ -958,76 +970,37 @@ class Associations:
     Stopword functions
     ================================================================ """
 
-    def sampling(self, sample=0.001):
-        print('test')
-        print(self.corpus_size_true)
-        print(len(self.word_freqs))
-        for word, freq in self.word_freqs.items():
-            zwi = freq / self.corpus_size_true
-            U = math.sqrt(zwi/sample)
-            B = sample/zwi
-            #pwi = (math.sqrt(zwi/sample) + 1) * (sample/zwi)
-            pwi = (U + 1) / B
-            if pwi > 10:
-                pass#print(word, self.get_translation(word), pwi, freq)
+    """ tf_idf() returns a stopword list based on TF-IDF. Argument
+    ´threshold´ defines the size of the stopword list. If no threshold
+    is given, a list relative to corpus size is returned.
 
-
-    def tf_idf(self):
+    This list can be passed as ´stopwords´ argument.
+    """
+    
+    def tf_idf(self, threshold=0):
+        print('Making TF-IDF stopword list...)')
         tf_idfs = {}
         w = []
+        if threshold == 0:
+            threshold = int(0.000005 * self.corpus_size)
+
         for document in self.documents:
             N = len(document)
-           
+
             for word in set(document):
                 t = document.count(word)
                 tf_idfs.setdefault(word, {'tf': [], 'found_in': 0})
                 tf_idfs[word]['tf'].append(t/N)
                 tf_idfs[word]['found_in'] += 1
-            
+
         for word, vals in tf_idfs.items():
             scores = []
             for tf in vals['tf']:
                 scores.append(tf * math.log(len(self.documents)/vals['found_in'], 10))
             w.append([sum(scores), word])
 
-        for x in sorted(w, reverse=True)[0:1000]:
-            pass#print(x, self.word_freqs[x[1]])
-        
-    """ ================================================================
-    Paradigmatic test
-    ================================================================ """
+        return [x[1] for x in sorted(w, reverse=True)[0:threshold]]
 
-    def paradigmatic(self):
-        """ First iteration """
-        scores = {}
-        contexts = []
-        wz = self.windowsize - 1
-        for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
-            scores[w[wz]] = []
-            if self._is_wordofinterest(w[wz], 1):
-                context = w[0:wz]+w[wz+1:]
-                contexts.append(set(context))
-
-        """ Second iteration """
-        for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
-            if w[0] == LINEBREAK:
-                if self.metalist:
-                    meta = tuple(self.metalist.pop(0))
-            context = set(w[0:wz]+w[wz+1:])
-            inter = 0
-            for c in contexts:
-                inter += len(context.intersection(c))
-            scores[w[wz]].append(inter)
-
-        vk = []
-        for k, v in scores.items():
-            vk.append([sum(v)/len(v), k])
-        i = 0
-        for x in sorted(vk, reverse=True):
-            print(x[1] + ' ' + self.get_translation(x[1]), '\t', x[0])
-            i += 1
-            if i == 50:
-                break
             
     """ ================================================================
     Bigram counting
@@ -1045,6 +1018,10 @@ class Associations:
         print('Counting bigrams ...')
         
         self.measure = measure.__name__
+        
+        """ Set has_meta if metadata is available. """
+        has_meta = len(self.metalist) > 0
+
         if HIDE_MIN_SCORE:
             self.minimum = ''
         else:
@@ -1092,18 +1069,18 @@ class Associations:
         
         def count_bigrams_symmetric():
             """ Symmetric window """
-            wz = self.windowsize - 1
+            wz = self.windowsize - 1                
             for w in zip(*[self.text[i:] for i in range(1+wz*2)]):
                 if w[0] == LINEBREAK:
-                    if self.metalist:
+                    if has_meta:
                         meta = tuple(self.metalist.pop(0))
                 if self._is_wordofinterest(w[wz], 1) and \
                    self._has_condition(w[0:wz]+w[wz+1:]):
-                    for index, bigram in enumerate(itertools.product([w[wz]], w[0:wz]+w[wz+1:])):
-                        if self.metalist:
+                    for index, bigram in enumerate(itertools.product([w[wz]],w[0:wz]+w[wz+1:])):
+                        if has_meta:
                             _gather_meta(bigram, meta)
                         yield _check_formulaic(bigram, list(w[0:wz]+w[wz+1:]), index)
-  
+
         def count_bigrams_symmetric_dist():
             """ Symmetric window and distance tracking. """
 
@@ -1120,7 +1097,7 @@ class Associations:
                 left = list(w[0:wz])
                 right = list(w[wz+1:])
                 if w[0] == LINEBREAK:
-                    if self.metalist:
+                    if has_meta:
                         meta = tuple(self.metalist.pop(0))
                 if self._is_wordofinterest(w[wz], 1) and \
                    self._has_condition(left+right):
@@ -1128,7 +1105,7 @@ class Associations:
                         bigram = _check_formulaic(bigram, left+right, index)
                         context = chain(left[::-1], right)
                         min_dist = math.floor(context.index(bigram[1])/2) + 1
-                        if self.metalist:
+                        if has_meta:
                             _gather_meta(bigram, meta)
                         self.distances.setdefault(bigram, []).append(min_dist)
                         yield bigram
@@ -1138,11 +1115,11 @@ class Associations:
             for w in zip(*[self.text[i:] for i in range(self.windowsize)]):
                 if w[0] == LINEBREAK:
                     """ Keep track of lines and their metadata """
-                    if self.metalist:
+                    if has_meta:
                         meta = tuple(self.metalist.pop(0))
                 if w[0] in self.words[1] and self._has_condition(w[1:]):
                     for index, bigram in enumerate(itertools.product([w[0]], w[1:])):
-                        if self.metalist:
+                        if has_meta:
                             """ If metadata is available, store it """
                             _gather_meta(bigram, meta)
                         yield _check_formulaic(bigram, list(w[1:]), index)
@@ -1154,12 +1131,12 @@ class Associations:
             for better efficiency """
             for w in zip(*[self.text[i:] for i in range(self.windowsize)]):
                 if w[0] == LINEBREAK:
-                    if self.metalist:
+                    if has_meta:
                         meta = tuple(self.metalist.pop(0))
                 if w[0] in self.words[1] and self._has_condition(w[1:]):
                     for index, bigram in enumerate(itertools.product([w[0]], w[1:])):
                         bg = _check_formulaic(bigram, list(w[1:]), index)
-                        if self.metalist:
+                        if has_meta:
                             _gather_meta(bg, meta)
                         d = index + 1
                         self.distances.setdefault(bg, []).append(d)
@@ -1196,7 +1173,7 @@ class Associations:
                 freq_w2 = self.word_freqs[w2]               
                 score = measure.score(scale(bigram_freqs[bigram], distance),
                                       freq_w1, freq_w2, self.corpus_size)
-                data = {'score': score,
+                data = {'score': score * fm,
                         'distance': distance,
                         'frequency': bigram_freqs[bigram],
                         'similarity': formulaic_measure}
@@ -1262,7 +1239,7 @@ class Associations:
         return table, from_json, words1, words2
 
     def intersect(self):
-        """ Create all unique permutations from keyword and initialize
+        """ Create all unique permutations from keywords and initialize
         a dictionary out of them; FIX """
         
         def clean_(pair):
@@ -1355,7 +1332,7 @@ class Associations:
         for r in [row for row in zip(*rows) if any(row[1:])]:
             self.output.append('\t'.join([str(m) for m in r]))
 
-    def print_scores(self, limit=10000, table=None):
+    def print_scores(self, limit=10000, table=None, gephi=False):
         def _add_prefix(key):
             ''' Add Mylly-prefixes '''
             if not MYLLY:
@@ -1392,11 +1369,6 @@ class Associations:
             
             metas = [] 
             formatted = {'period': {}, 'genre' : {}, 'combo' : {}}
-
-            #
-            # FIX ME: ASYMMETRIC WINDOW CAUSES KEYERROR
-            #
-            
 
             if not self.metadata:
                 return ['', '', '']
@@ -1438,8 +1410,11 @@ class Associations:
             sort_indices = [0, -7]
 
         self.output_format = 'scores'
-        self.output.append('\t'.join([_add_prefix(x) for x in header]))
-        
+        if gephi:
+            self.output.append(';'.join(['source', 'target', 'weight']))
+        else:
+            self.output.append('\t'.join([_add_prefix(x) for x in header]))
+            
         rows = []
         for w1 in table['collocations'].keys():
             for w2 in table['collocations'][w1].keys():
@@ -1467,20 +1442,29 @@ class Associations:
                 
         lastword = ''
         for line in self._sort_by_index(rows, sort_indices):
-            if lastword != line[0]:
-                i = 0
-            if i < limit:
-                self.output.append('\t'.join(self._stringify(line)))
-            lastword = line[0]
-            i += 1
-            
+            if not gephi:
+                if lastword != line[0]:
+                    i = 0
+                if i < limit:
+                    self.output.append('\t'.join(self._stringify(line)))
+                lastword = line[0]
+                i += 1
+            if gephi:
+                if lastword != line[0]:
+                    i = 0
+                if i < limit:
+                    data = [line[0]+' '+line[1]] + [line[2]+' '+line[3]] + [line[7]]
+                    self.output.append(';'.join(self._stringify(data)))
+                lastword = line[0]
+                i += 1
+
     """ ================================================================
     Dictionary tools ===================================================
     ================================================================ """
 
     def get_translation(self, lemma):
-        if lemma in dct.keys():
-            return dct[lemma]
+        if lemma in self.translations.keys():
+            return self.translations[lemma]
         else:
             return '[?]'
         
@@ -1496,7 +1480,7 @@ class Associations:
             if k in self.word_freqs.keys():
                 freqlist.append([k, '[%s]' % v, self.word_freqs[k]])
 
-        for k, v in dct.items():
+        for k, v in self.translations.items():
             for t in translations:
                 if isinstance(t, str):
                     if t == v:
@@ -1538,26 +1522,31 @@ class Associations:
     def has_postag(self, postag):
         return self.has_translation(postag)
 
-def demo():
-    """
-    a = Associations()
-    a.set_window(size=10, symmetry=False)
-    lemma_position = 2
-    pos_position = 3
-    a.read_vrt('s24.vrt', lemma_position, pos_position)
+    """ ================================================================
+    Random sampling tools (for measure evaluation purposes)
+    ================================================================ """
 
-    w1 = ['maito', 'olut', 'vesi']
-    stopwords = a.has_postag(['Punct', 'C', 'Pron', 'Adp', 'Num', 'Adv'])
-    
-    a.set_constraints(freq_threshold=5,
-                      words1=w1,
-                      stopwords=stopwords)
-    st = time.time()
-    a.score_bigrams(PMI3)
-    a.print_scores()
-    vt = time.time() - st
-    print(vt)
-    a.write_tsv('lauta')
-    
-    """
-    pass
+    """ Sample a population of words from frequency list from
+    given frequency range. ´quantity´ is the population size and
+    ´freq_range´ a list that contains the min and max freq,
+    e.g. [30,50] """
+
+    def pick_random(self, quantity, freq_range):
+        sampled = []
+        for k, v in self.word_freqs.items():
+            if freq_range[1] > v > freq_range[0]:
+                sampled.append(k)
+        self.random_sample = random.sample(sampled, quantity)
+        return self.random_sample
+
+    """ Random samples can be saved and loaded with the
+    following funtions """
+
+    def save_random(self, filename):
+        with open(filename, 'w', encoding='utf-8') as data:
+            data.write('\n'.join(self.random_sample))
+
+    def load_random(self, filename):
+        with open(filename, 'r', encoding='utf-8') as data:
+            self.random_sample = data.read().splitlines()
+            return self.random_sample
