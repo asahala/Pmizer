@@ -231,7 +231,7 @@ A tool for calculating word association measures.
                          See more precise documentation in the comments about
                          repetitiveness measures. Note that these measures
                          are generally useful only with window sizes of
-                         3 or larger.
+                         3 or larger (published: Sahala 2020)
      
      
      ========================================================================
@@ -247,9 +247,11 @@ A tool for calculating word association measures.
          PPMI            Positive PMI. As PMI but discards negative scores.
          PPMI2           Positive PMI^2 (Role & Nadif 2011)
          NPMI2           Normalized Positive PMI^2 (Sahala 2019)
-         PMISIG          TODO: add doc
-         SCISIG          TODO: add doc
+         PMISIG          Washtell & Markert (2009)
+         SCISIG          Semi-Conditional Information (Washtell & Markert 2009)
      
+     PPMI is recommended for matrix factorization. (N)PMI2 or SCISIG for
+     traditional collocation analysis.
      
      ========================================================================
      Output formats =========================================================
