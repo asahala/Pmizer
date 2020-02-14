@@ -13,7 +13,7 @@ import re
 import godlist
 import random
 try:
-    from dictionary import root as dct
+    from dictionary import dct as dct #root
 except ImportError:
     print('dictionary.py not found!')
     dct = {}
@@ -48,213 +48,6 @@ pmizer.py - Aleksi Sahala 2018 - University of Helsinki ================
 / Language Bank of Finland
 
 / http://github.com/asahala
-
-========================================================================
-General description ====================================================
-========================================================================
-
-This script calculates different word association measures derived from
-PMI (Pointwise Mutual Information). In Language Technology, the PMI is
-used to find collocations and associations between words.
-
-By its basic definition, PMI is the ratio of p(w1,w2), i.e. the actual
-probability that two words are co-occurring within a certain distance
-from each other to p(a)p(b), i.e. the expected chance of those words
-co-occurring independently.
-
-                   p(w1,w2)          
-  PMI(w1,w2) = ln ----------         
-                  p(w1)p(w2)
-
-PMI score of 0 indicates perfect independence. Scores greater than 0 may
-point to a possible collocation, and scores lesser than 0 indicate that
-words are found together less often than expected by chance.
-
-With small window sizes (i.e. the maximum distance between the words),
-PMI can be used to find fixed expressions and compound words such as
-´police car´, ´subway station´, ´kick (the) bucket´. With larger
-window sizes PMI usually finds more abstract semantic concepts:
-´Microsoft ... software´, ´banana ... fruit´, ´admiral ... navy´.
-
-For a practical example, below are listed the best ten collocates for
-the Neo-Assyrian word ´kakku´ [weapon], using a window size of 10:
-
- PMI     Colloc.   Translation.
- 9.081   ezzu      [to be furious, angry] 
- 7.9028  maqâtu    [to fall, to defeat]
- 7.7721  tiâmtu    [sea] (*)
- 7.2058  tâhâzu    [battle]
- 6.5646  nakru     [enemy]
- 6.2976  sharrûtu  [kingship]
- 6.1073  dannu     [having strength]
- 5.9267  nashû     [lifted]
- 5.8615  Ashur     [God Ashur]
- 5.0414  âlu       [city]
-
-(* this comes from a formulaic expression found in the Neo-Assyrian
-royal inscriptions, where all the people from the ´Upper Sea´ (Medi-
-terranean) to the ´Lower Sea´ (Persian Gulf) were subjugated under
-the Assyrian rule by ´great weapons granted by the god Ashur´).
-
-From these, we can reconstruct some kind of prototypical semantic field
-for ´weapon´ as it was probably perceived by the ancient Assyrians, at
-least in the context of royal inscriptions:
-
-    WEAPON is something that is
-      - LIFTED to intimidate and to show power
-      - associated with FURY, ANGER and STRENGTH
-      - used in BATTLES to DEFEAT ENEMIES and their CITIES between
-        the SEAS in order to enforce the Assyrian KINGSHIP.
-      - great weapons are granted by the GOD ASHUR
-
-========================================================================
-Quick guide ============================================================
-========================================================================
-
-The following lines of code will generate the top-20 NPMI results using
-a forward-looking window of 7, with a minimum bigram frequency of 10.
-
-1) Initialize Associations()        a = Associations()
-2) Set window properties:           a.window(size=7)
-3) Open your corpus file            a.read_raw(yourfile.txt)
-4) Set constraints (optional)       a.set_constraints(freq_threshold=10)
-5) Calculate scores                 a.score_bigrams(NPMI)
-6) Make score table for the top-20  a.print_scores(20)
-
-See below for more detailed instructions.
-
-
-========================================================================
-Associations.set_window(size, symmetry) ================================
-========================================================================
-
- ´size´             (int) Collocational window that defines the
-                    maximum mutual distance of the elements of a non-
-                    contiguous bigram. Minimum distance is 2, which
-                    means that the words are expected to be next to each
-                    other.
-
- ´symmetry´         (bool) Use symmetric window. If not used, the window
-                    is forward-looking. For example, with a window size
-                    of 3 and w4 being our word of interest, the windows
-                    are calculated as:
-
-                                 w1 w2 w3 w4 w5 w6 w7
-                    symmetric       +--+--^--+--+
-                    asymmetric            ^--+--+
-
-
-========================================================================
-Associations.read_XXXXX(filename) ======================================
-========================================================================
-
-Associations.read_raw(filename) ----------------------------------------
-
-  Takes a lemmatized raw text file as input. For example, a text
-  "Monkeys ate coconuts and the sun was shining" would be:
-
-     monkey eat coconut and the sun be shine
-
-  Bigrams are NOT allowed to span from line to another. Thus, if you
-  want to disallow bigrams spanning from sentence to another, the
-  text should contain one sentence per line.
-
-
-Associations.read_vrt(filename, word_attribute, delimiter) -------------
-
-  Reads VRT files. You must define the ´word_attribute´ index (int),
-  from which the lemmas can be found. ´delimiter´ is used to set the
-  boundary, over which the bigrams are not allowed to span. Normally
-  this is either ´<text>´, ´<paragraph>´ or ´<sentence>´, but may as
-  well be ´<clause>´ or ´<line>´, if such are available in the file.
-
-NOTE: Window size must always be specified before reading the file!
-
-
-========================================================================
-Associations.set_constraints(**kwargs) =================================
-========================================================================
-
-Constraints and properties may be set by using the following kwargs:
-
- ´freq_threshold´   (int) minimum allowed bigram frequency. This can be
-                    used to counter the low-frequency bias of certain
-                    PMI variants.
-                    
- ´freq_threshold_collocate´   (int) minimum allowed collocate frequency.
-
- ´words1´ &         (list) words of interest, in other words, the white-
- ´words2´           list of words, which are allowed to exist in the
-                    bigram (word1, word2) or (word1 ... word2).
-                    Words of interest may also be expressed as compiled
-                    regular expressions. See exampes in ´stopwords´.
-
-                    NOTE: at least one word1 must be specified.
-
- ´stopwords´        (list) the black list of uninteresting words like
-                    prepositions, numbers etc. May be expressed as
-                    compiled regular expressions. For example
-                    [re.compile('\d+?'), re.compile('^[A-ZŠṢṬĀĒĪŪ].+')]
-                    will discard all numbers written as digits, as well
-                    as all words that begin with a capital letter.
-
-                    NOTE: It may be wise to express series of regular
-                    expressions as disjunctions (regex1|...|regexn) as
-                    it makes the matching significantly faster, e.g. 
-                    [re.compile('^(\d+?|[A-ZŠṢṬĀĒĪŪ].+)'].
-
-                    Stopwords and words of interest may also be defined
-                    by their translations, POS tag etc. See the section
-                    ´Using dictionaries´ for more info.
-
- ´conditions´       (list) optional list of conditional words, see
-                    below. If any of them matches, the condition will
-                    be True.
-
- ´positive_condition´ (bool) set True if conditional word must appear
-                    in the window, or False if it is prohibited. These
-                    can be used to filter out formulaic expressions,
-                    e.g. to search for šarru 'king' where typical
-                    epitethical adjectives or place names don't exist.
- 
- ´track_distance´   (bool) calculate and store the average minimum
-                    distance between the words of the bigram. If the
-                    same bigram can be found several times within the
-                    window, only the closest distance is taken into
-                    account.
-
-                    NOTE: Slows bigram counting 2-3 times depending
-                    on the window size. With large symmetric windows
-                    this can take several minutes or even hours.
-
- ´formulaic_measure´ Gives collocate an additional score depending on
-                    how formulaic the context is. Possible choices are
-                    (do not use " or ' with these):
-
-                    None     (default) No measure
-
-                    Greedy   Percentage of similar information
-                    Lazy     Percentage of repeated information
-                    Strict   formulaic : free (ratio)
-
-                    See more precise documentation in the comments about
-                    repetitiveness measures. Note that these measures
-                    are generally useful only with window sizes of
-                    3 or larger.
-
-========================================================================
-Associations.score_bigrams(measure) ====================================
-========================================================================
-
-Argument ´measure´ must be one of the following:
-
-    PMI             Pointwise mutual information (Church & Hanks 1990)
-    NPMI            Normalized PMI (Bouma 2009)
-    PMI2            PMI^2 (Daille 1994)
-    PMI3            PMI^3 (Daille 1994)
-    PPMI            Positive PMI. As PMI but discards negative scores.
-    PPMI2           Positive PMI^2 (Role & Nadif 2011)
-
 
 ========================================================================
 Associations.export_json(filename), Associations.import_json(filename) =
@@ -306,40 +99,7 @@ JSON structure:
     |
     +---´words1´ (list of words1 of interest)
     +---´words2´ (list of words2 of interest)
-    
-========================================================================
-Output formats =========================================================
-========================================================================
-
-Associations.print_scores(limit, scoretable) ---------------------------
-
- DESCRIPTION       Generates a score table that includes word and bigram
-                   frequencies and the association measures.
-
- ´limit´           (int) Set the minimum rank that will be printed in
-                   your score table. E.g. a limit of 20 will print only
-                   the top-20 scores.
-
- ´scoretable´      Imported JSON score table. Use this in case you have
-                   previously exported your scores. Use the method
-                   set_constraints() to re-adjust your minimum threshold,
-                   words of interest and stopwords. Naturally, if you
-                   have used a freq. thresholds of 15 in your scores,
-                   you can only re-adjust the value over 15.
-                   
-                   
-Associations.print_matrix(value, scoretable) ---------------------------
-
- DESCRIPTION       Generates a matrix from two sets of words of
-                   interest. NOTE: matrices should only be used with a
-                   small pre-defined set of words of interest.
-
- ´value´           Value that will be used in the matrix: ´score´,
-                   bigram ´frequency´ or ´distance´.
-
- ´scoretable´      As above.
-
- 
+     
 ========================================================================
 Using dictionaries and/or POS-tagging ==================================
 ========================================================================
@@ -436,6 +196,27 @@ class NPMI:
     def score(ab, a, b, cz):
         return PMI.score(ab, a, b, cz) / -_log(ab/cz)
 
+class PMIsig:
+    """ Washtell & Markert (2009) """
+    minimum = -math.inf
+
+    @staticmethod
+    def score(ab, a, b, cz):
+        pa = a / cz
+        pb = b / cz
+        return math.sqrt(min(pa, pb)) * 2**(PMI.score(ab, a, b, cz))
+
+class SCISIG:
+    """ Washtell & Markert (2009) """
+    minimum = -math.inf
+
+    @staticmethod
+    def score(ab, a, b, cz):
+        pa = a / cz
+        pb = b / cz
+        pab = ab / cz
+        return math.sqrt(min(pa, pb)) * (pab / ((pa) * math.sqrt(pb)))
+    
 class cPMI:
     """ Corpus Level Significant PMI as in Damani 2013. According to
     the original research paper, delta value of 0.9 is recommended """
@@ -455,6 +236,10 @@ class PMI2:
     
     @staticmethod
     def score(ab, a, b, cz):
+
+        #pab = (ab/cz)**2
+        #papb = (a/cz)*(b/cz)
+        #return pab, papb
         return PMI.score(ab, a, b, cz) - (-_log(ab/cz))
     
 class PMI3:
@@ -485,6 +270,17 @@ class PPMI2:
     @staticmethod
     def score(ab, a, b, cz):
         return math.sqrt(2 ** PMI2.score(ab, a, b, cz))
+
+class NPMI2:
+    """ NPMI^2. Removes the low-frequency bias as PMI^2 and has
+    a fixed score orientation as NPMI: 1 > 0 = 0. Take square root
+    of the result to trim excess decimals. Sahala (2019) """
+    @staticmethod
+    def score(ab, a, b, cz):
+        ind = 2 ** _log(ab / cz)
+        base_score = 2 ** PMI2.score(ab, a, b, cz) - ind
+        return math.sqrt(max(base_score / (1 - ind), 0))
+        #return math.log(max(base_score / (1 - ind), 0) + 0.000000000001)
 
 """ ====================================================================
 Repetitiveness "Formulaic" measures ====================================
@@ -554,7 +350,7 @@ Lazy:
     Lazy     a    b    W    d     X
              a    b    W    d     X 
              0.5  0.5  _    0.5   _   = 0.5
-    
+
 ==================================================================== """
 
 class FormulaicMeasures:
@@ -576,7 +372,7 @@ class Greedy:
             counts = Counter(words).values()
             singles = len([x for x in counts if x == 1])
             repeated.append(1-(singles/len(words)))
-            if collocate == 'wēdu': print(words)
+            #if collocate == 'wēdu': print(words)
         return sum(repeated) / len(repeated)
 
 class Strict:
@@ -602,11 +398,13 @@ class Lazy:
             diffs.append((len(window) - compensated) / len(window))
             """ Uncomment to see probabilities """
             #print('\t'.join(window), (len(window) - compensated) / len(window))
+        #print(1 - (sum(diffs) / len(diffs)), sum(diffs), len(diffs))
         return sum(diffs) / len(diffs)
 
 class Associations:
 
     def __init__(self):
+        """ set_constraints() populates constructor """
         self.text = []
         self.output = []
         self.output_format = None
@@ -617,8 +415,8 @@ class Associations:
                        'words2': []}
         self.measure = None
         self.windowsize = None
-        self.freq_threshold = 3
-        self.freq_threshold_collocate = 5
+        self.freq_threshold = 1
+        self.freq_threshold_collocate = 1
         self.symmetry = False    
         self.words = {1: [], 2: []}
         self.conditions = {'stopwords': ['', LACUNA, BUFFER, LINEBREAK],
@@ -629,7 +427,6 @@ class Associations:
         self.regex_words = {1: [], 2: []}
         self.distances = {}
         self.track_distance = False
-        self.distance_scaling = False
         self.log_base = LOGBASE
         self.window_scaling = WINDOW_SCALING
         self.date = datetime.datetime.now()
@@ -835,7 +632,8 @@ class Associations:
             for line in data.read().splitlines():
                 if line:
                     word, translation = line.split('\t')
-                    self.translations[word] = translation
+                    ## STRIP ; from the end of line
+                    self.translations[word] = translation.replace(';', ',')
             
     """ ================================================================
     Properties =========================================================
@@ -845,6 +643,7 @@ class Associations:
         """ Set constraints. Separate regular expressions from the
         string variables, as string comparison is significantly faster
         than re.match() """
+        
         for key, value in kwargs.items():
             if key in ['stopwords', 'conditions']:
                 for word in value:
@@ -862,7 +661,7 @@ class Associations:
             else:
                 setattr(self, key, value)
 
-        """ Combined tables for faster comparison """
+        """ Combine tables for faster comparison """
         self.anywords = any([self.words[1], self.words[2],
                          self.regex_words[1], self.regex_words[2]])
         self.anywords1 = any([self.words[1], self.regex_words[1]])
@@ -873,7 +672,6 @@ class Associations:
     def set_window(self, size=None, symmetry=False):
         self.windowsize = size
         self.symmetry = symmetry
-
 
     """ ================================================================
     Helper funtions ====================================================
@@ -1037,7 +835,8 @@ class Associations:
             index of the collocate from the window to preserve only
             context of the bigram """
             if self.formulaic_measure is not None:
-                window.pop(index)
+                #window.pop(index)
+                window[index] = '_'
                 self.WINS.setdefault(bigram, []).append(window)
             return bigram
 
@@ -1173,6 +972,8 @@ class Associations:
                 freq_w2 = self.word_freqs[w2]               
                 score = measure.score(scale(bigram_freqs[bigram], distance),
                                       freq_w1, freq_w2, self.corpus_size)
+                #score = (_score[0] / _score[1]) * fm
+                #score = _log(score)
                 data = {'score': score * fm,
                         'distance': distance,
                         'frequency': bigram_freqs[bigram],
@@ -1238,64 +1039,6 @@ class Associations:
             words2 = self._filter_json(table['words2'], 2)
         return table, from_json, words1, words2
 
-    def intersect(self):
-        """ Create all unique permutations from keywords and initialize
-        a dictionary out of them; FIX """
-        
-        def clean_(pair):
-            if pair[0] != pair[1]:
-                return tuple(sorted(pair))
-            
-        table = self.scored
-        keywords = sorted(table['words1'])
-        p = itertools.product(keywords, keywords)
-        perms = list(set([clean_(x) for x in list(p)]))
-        intersections = {}
-
-        for item in perms:
-            if item is not None:
-                keyword1 = item[0]
-                keyword2 = item[1]
-                if keyword1 not in intersections.keys():
-                    intersections[keyword1] = {keyword2: []}
-                else:
-                    intersections[keyword1].update({keyword2: []})
-
-
-        def build_set(collocates):    
-            for c in collocates.keys():
-                if collocates[c]['score'] > 0.0005:
-                    yield c
-
-        duplos = []
-        
-        for key1 in table['collocations'].keys():
-            for key2 in intersections.keys():
-                k = tuple(sorted([key1, key2]))
-                if k in perms:#key1 != key2:
-                    keys = sorted([key1, key2])
-                    key1_set = set(build_set(table['collocations'][key1]))
-                    key2_set = set(build_set(table['collocations'][key2]))
-                    inters_ = list(key1_set.intersection(key2_set))
-                    #intersections[keys[0]][keys[1]] = intersection
-
-
-                    if inters_ and sorted([key1, key2]) not in duplos:
-                        print(key1, key2)
-                        d = []
-                        for item in inters_:
-                            c = table['collocations']
-                            t = table['translations'][item]
-                            s1 = c[key1][item]['score']
-                            s2 = c[key2][item]['score']
-                            avg = self._trim_float((s1+s2)/2)
-                            d.append([str(avg), item, t])
-                        x = sorted(d, reverse=True)
-                        l = '\n'.join(['\t'.join(a) for a in x])
-                        print(l)
-                        print('\n')
-                        duplos.append(sorted([key1, key2]))
-                        
     def print_matrix(self, value, table=None):
         """ Make a collocation matrix of two sets of words of
         interest. Argument ´value´ must be ´score´, ´frequency´
@@ -1550,3 +1293,7 @@ class Associations:
         with open(filename, 'r', encoding='utf-8') as data:
             self.random_sample = data.read().splitlines()
             return self.random_sample
+
+
+
+
