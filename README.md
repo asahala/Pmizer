@@ -9,7 +9,7 @@ A tool for calculating word association measures.
      | |     |  |\/|  | |  |  /  /__  |  |____ |  |\  \
      |_|     |__|  |__| |__| |______| |______| |__| \__\
      
-       2019-12-31
+       2019-05-21
      
      
      ========================================================================
@@ -218,21 +218,27 @@ A tool for calculating word association measures.
                          on the window size. With large symmetric windows
                          this can take several minutes or even hours.
      
-      ´formulaic_measure´ Gives collocate an additional score depending on
-                         how formulaic the context is. Possible choices are
-                         (do not use " or ' with these):
+      ´formulaic_measure´ Weight scores based on their contextual similarity.
+                         Options are:
      
                          None     (default) No measure
      
-                         Greedy   Percentage of similar information
+                         Greedy   removed temporarily
                          Lazy     Percentage of repeated information
-                         Strict   formulaic : free (ratio)
-     
+                         Strict   removed temporarily
+                         
                          See more precise documentation in the comments about
                          repetitiveness measures. Note that these measures
                          are generally useful only with window sizes of
                          3 or larger (published: Sahala 2020)
      
+     ´preweight´         Pre-weight type for context similarity measures.
+     
+                         None      Apply after calculating the association
+                                   score.
+                         
+                         1         Apply on joint-distribution only.
+                         2         Apply on joint-distribution and margins.
      
      ========================================================================
      Associations.score_bigrams(measure) ====================================
