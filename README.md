@@ -1,3 +1,8 @@
+# pmizer2.py
+
+Version 2 of pmizer with better handling for duplication. 
+
+
 # pmizer.py
 
 A tool for calculating word association measures. 
