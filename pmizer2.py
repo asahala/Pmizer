@@ -14,7 +14,7 @@ from urllib.parse import quote
 import random
 from collections import Counter
 
-__version__ = "2020-05-20"
+__version__ = "2020-11-27"
 
 print('pmizer.py version %s\n' % __version__)
 
@@ -61,6 +61,11 @@ Critical bug fixes:
                     similarity measure now discards collocates
                     from counts properly (i.e. subtracts 1 from
                     the denominator).
+
+
+Other fixes:
+
+        2020-11-27: Preweight is now default.
                     
 
 How to use? =====================================================
