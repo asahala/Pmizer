@@ -303,7 +303,10 @@ A tool for calculating word association measures.
      Will automatically generate the 50 most uninteresting words in the input
      data by using term frequency - inverse document frequency metric.
      
-     
+
+# TODO
+
+Clean repo, document Pmizer 2 features
 
 # PMI2VEC/pmi2vec.py
 
