@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+#from dictionary import dct
+
 import itertools
 import json
 import math
@@ -8,7 +10,8 @@ import re
 import statistics
 import sys
 import time
-import urllib
+from urllib.parse import quote
+import random
 from collections import Counter
 
 __version__ = "2020-05-20"
@@ -59,6 +62,34 @@ Critical bug fixes:
                     from counts properly (i.e. subtracts 1 from
                     the denominator).
                     
+
+How to use? =====================================================
+
+(1) Create text object (text per line, lemmas separated by space)
+
+    text = Text('oracc-akkadian.txt')
+
+(2) Calculate co-occurrencies for the text object
+
+    cooc = Associations(text,
+                 words1=['*'],            # All words to all words
+                 formulaic_measure=Lazy,  # Use CSW
+                 minfreq_b = 1,           # Min freq of b 
+                 minfreq_ab = 1,          # Min co-oc freq of a and b
+                 symmetry=True,           # Window symmetry 
+                 windowsize=5,            # Window size 
+                 factorpower=2)           # k-value
+
+(3) Calculate PMI from co-occurrences from the associations object
+
+    results = cooc.score(PMI2)            # Select association measure
+
+(4) Print results from
+
+    x.print_scores(results, limit=1000, gephi=True, filename='oracc.pmi')
+
+
+
 /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\ """
 
 """ ====================================================================
@@ -80,7 +111,7 @@ def make_korp_oracc_url(w1, w2, wz):
            '?lang=fi&stats_reduce=word'
     cqp = '&cqp=%5Blemma%20%3D%20%22{w1}%22%5D%20%5B%5D%7B0,'\
           '{wz}%7D%20%5Blemma%20%3D%20%22{w2}%22%5D'\
-          .format(w1=urllib.parse.quote(w1), w2=urllib.parse.quote(w2), wz=wz)
+          .format(w1=quote(w1), w2=quote(w2), wz=wz)
     corps = '&corpus=oracc_adsd,oracc_ario,oracc_blms,oracc_cams,oracc_caspo,oracc_ctij'\
             ',oracc_dcclt,oracc_dccmt,oracc_ecut,oracc_etcsri,oracc_hbtin,oracc_obmc,'\
             'oracc_riao,oracc_ribo,oracc_rimanum,oracc_rinap,oracc_saao,'\
@@ -141,12 +172,21 @@ class IO:
             
 """ ====================================================================
 Word association measures ==============================================
+
+Measures take four arguments:
+
+   ab = co-oc freq
+   a  = freq of a
+   b  = freq of b
+   cz = corpus size
+   factor = CSW value (this is used if postweight is set)
+
 ==================================================================== """
 
 
 class PMI:
     """ Pointwise Mutual Information. The score orientation is
-    -log p(a,b) > 0 > -inf """
+    -log p(a,b) > 0 > -inf. As in Church & Hanks 1990. """
     minimum = -math.inf
 
     @staticmethod
@@ -157,9 +197,33 @@ class PMI:
     def score(ab, a, b, cz, factor):
         return factor * (_log(ab*cz) - _log(a*b))
 
+class PMIDELTA:
+    """ Smooth PMI (Pantel & Lin 2002). This measure reduces
+    the PMI score more, the rarer the words are, thus reducing
+    the low-frequency bias """
+    minimum = -math.inf
+
+    @staticmethod
+    def score(ab, a, b, cz, factor):
+        weight = (ab/(ab+1)) * (min(a,b)/(min(a,b,)+1))
+        return factor * weight * (_log(ab*cz) - _log(a*b))
+
+class PMICDS:
+    """ Context distribution smoothed PMI (Levy, Goldberg &
+    Dagan 2015). This measure raises the f(b) to the power of
+    alpha = 0.75 """
+    minimum = -math.inf
+
+    ## WORKS ONLY IN MATRIX FACTORIZATION
+
+    @staticmethod
+    def score(ab, a, b, cz, factor):
+        alpha = 0.75
+        return max(factor * _log((cz*ab) / (a*(b**alpha))),0)
 
 class NPMI:
-    """ Normalized PMI. The score orientation is  +1 > 0 > -1 """
+    """ Normalized PMI. The score orientation is  +1 > 0 > -1
+    as in Bouma 2009 """
     minimum = -1.0
 
     @staticmethod
@@ -208,7 +272,7 @@ class cPMI:
 class PMI2:
     """ PMI^2. Fixes the low-frequency bias of PMI and NPMI by squaring
     the numerator to compensate multiplication done in the denominnator.
-    Scores are oriented as: 0 > log p(a,b) > -inf """
+    Scores are oriented as: 0 > log p(a,b) > -inf. As in Daille 1994 """
     minimum = -math.inf
     
     @staticmethod
@@ -219,13 +283,21 @@ class PMI2:
 class PMI3:
     """ PMI^3 (no low-freq bias, favors common bigrams). Although not
     mentioned in any papers at my disposal, the scores are oriented
-    log p(a,b) > 2 log p(a,b) > -inf. """
+    log p(a,b) > 2 log p(a,b) > -inf. As in Daille 1994"""
     minimum = -math.inf
     
     @staticmethod
     def score(ab, a, b, cz, factor):
         return (PMI.score(ab, a, b, cz, 1) - (-(2*_log(ab/cz)))) / factor
 
+class SPMI:
+    """ Positive shifted PMI. Works as the regular PMI but discards negative
+    scores: -log p(a,b) > 0 = 0; Shift by 3 """
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor):
+        return max(3 + PMI.score(ab, a, b, cz, factor), 0)
 
 class PPMI:
     """ Positive PMI. Works as the regular PMI but discards negative
@@ -249,32 +321,21 @@ class PPMI2:
 
 class PPMI3:
     """ Positive derivative of PMI^3. Shares exaclty the same properties
-    but the score orientation is: p(a,b) > p(a,b)^2 > 0 """
+    but the score orientation is: p(a,b) > p(a,b)^2 > 0
+
+    Not mentioned in Role & Nadif """
+    
     minimum = 0
     
     @staticmethod
     def score(ab, a, b, cz, factor):
         return factor * (2 ** PMI3.score(ab, a, b, cz, 1))
-
-
-class NSCISIG:
-    """ Normalized Semi-conditional information. Score orientation
-    is +1 > 0 = 0 (Sahala 2019) """
-    minimum = 0
-
-    @staticmethod
-    def score(ab, a, b, cz, factor):
-        pa = a / cz
-        pb = b / cz
-        pab = ab / cz
-        base = SCISIG.score(ab, a, b, cz, 1)
-        return factor * ((base - math.sqrt(pab)) / (1 - math.sqrt(pab)))
-    
+ 
 
 class NPMI2:
     """ NPMI^2. Removes the low-frequency bias as PMI^2 and has
     a fixed score orientation as NPMI: 1 > 0 = 0. Take cube root
-    of the result to trim excess decimals. Sahala (2019) """
+    of the result to trim excess decimals. Sahala & Linden (2020) """
 
     minimum = 0
     
@@ -288,7 +349,7 @@ class NPMI2:
 class NPMI3:
     """ NPMI^3. Removes the low-frequency bias as PMI^3 and has
     a fixed score orientation as NPMI: 1 > 0 = 0. Take cube root
-    of the result to trim excess decimals. Sahala (2019) """
+    of the result to trim excess decimals. Sahala & Linden (2020) """
 
     minimum = 0
     
@@ -298,76 +359,13 @@ class NPMI3:
         base_score = 2 ** PMI3.score(ab, a, b, cz, 1) - (pab**2)
         return (max(base_score / (pab - (pab**2)), 0) * factor) ** (1/3)
 
-
         
 """ ====================================================================
-Repetitiveness "Formulaic" measures ====================================
+Context Similarity Weighting ===========================================
 ========================================================================
 
-These can be used to detect and score formulaic expressions. There
-are three measures. In the examples W stands for our keyword
-and X for its collocate. Other letters represent arbitrary words. Note
-that linebreaks and paddings are taken into account, thus a bigram that
-always occurs in a beginning or end of a line and will be considered
-formulaic.
-
-Greedy:
-
-    Greedy measure represents the amount of repetitiveness within
-    the windows where our bigrams occur. A score of 1.0 would indicate
-    that the collocate only occurs in formulaic expressions (regardless
-    if there are one or several different expressions!). A score
-    of 0.5 indicates that half of the contexts are repeated. The
-    contexts do not have to be exactly similar in order to be
-    accepted as formulaic, e.g. if in some instance one
-    word in the expression is different it will only slightly
-    decrease the repetitiveness score (as in the case below).
-
-             symmetric window of 3
-
-             a   b   W   d    X
-             a   b   W   d    X
-             a   b   W   e    X
-    sim.     1.0 1.0 _   0.66 _   --> repetitiveness: 0.89 (avg)
-
-
-Strict:
-
-    Strict measure represents the ratio of unique expressions to
-    formulaic expressions that are exactly similar. A score of
-    0.66 would indicate that 2/3 of the contexts are strictly
-    formulaic.
-    
-             a   b   W   c   d   X    1.0
-             a   b   W   c   d   X    1.0
-             a   b   W   c   e   X    0.0
-    sim.                              0.66
-
-
-Lazy:
-
-    Lazy measure represents the percentage of repetitive content,
-    but it does not take into account one instance of each repeated
-    word in the same position in an expression. Thus, a score of 0.56
-    would indicate that 56% of the content in expressions is repeated.
-
-             a    b    W   d    X   
-             a    b    W   d    X
-             a    b    W   e    X 
-    sim.     0.66 0.66 _   0.33 _   = 0.56 (avg)
-    
-    The greedy and lazy measures can give quite different results.
-    In the following, greedy indicates that 100% of the expressions
-    are formulaic, while lazy indicates thet 50% of the content is
-    repeated.
-
-    Greedy   a    b    W    d     X
-             a    b    W    d     X 
-             1.0  1.0  _    1.0   _   = 1.0
-
-    Lazy     a    b    W    d     X
-             a    b    W    d     X 
-             0.5  0.5  _    0.5   _   = 0.5
+An initial version of CSW as in Sahala & Linden 2020. Performs similarly
+but has a space complexity of O(n×m^2) (n = corpus size, m = window len)
 
 ==================================================================== """
 
@@ -571,8 +569,16 @@ class Text(object):
         IO.show_time(st2, "TF-IDF")
         return [x[1] for x in sorted(words, reverse=True)[0:threshold]]
 
+    def read_dict(self):
+        filename = self.filename.split('.')[0] + '.dict'
+        with open(filename, 'r', encoding='utf-8', errors='ignore') as data:
+            for line in data.read().splitlines():
+                key, value = line.split('\t')
+                self.translations[key] = value
 
     def uniquify(self, wz):
+        # This feature is not finished
+        
         """ Produce a version of text that do not need window scaling.
         Iterate text and disallow words occurring more than once
         withing a given distance from each other. Replace non-unique
@@ -610,6 +616,35 @@ class Text(object):
         
         #for k, v in sorted(Counter(removed).items()):
         #    print(v, k)
+
+    """ ================================================================
+    Random sampling tools (for measure evaluation purposes)
+    ================================================================ """
+
+    """ Sample a population of words from frequency list from
+    given frequency range. ´quantity´ is the population size and
+    ´freq_range´ a list that contains the min and max freq,
+    e.g. [30,50] """
+
+    def pick_random(self, quantity, freq_range):
+        sampled = []
+        for k, v in self.word_freqs.items():
+            if freq_range[1] > v > freq_range[0]:
+                sampled.append(k)
+        self.random_sample = random.sample(sampled, quantity)
+        return self.random_sample
+
+    """ Random samples can be saved and loaded with the
+    following funtions """
+
+    def save_random(self, filename):
+        with open(filename, 'w', encoding='utf-8') as data:
+            data.write('\n'.join(self.random_sample))
+
+    def load_random(self, filename):
+        with open(filename, 'r', encoding='utf-8') as data:
+            self.random_sample = data.read().splitlines()
+            return self.random_sample
         
 """ ====================================================================
 Association measure tools ==============================================
@@ -632,14 +667,18 @@ class Associations:
         
         self.distances = {}
         self.WINS = {}
+
         self.translations = {}
+        if self.text.translations:
+            self.translations = self.text.translations
 
         self.track_distance = False
         self.symmetry = False
         self.track_distance = False
         self.positive_condition = False
         self.formulaic_measure = None
-        self.preweight = None
+        self.postweight = False
+        self.factorpower = 1
 
         self.words = {1: [], 2: []}
         self.regex_words = {1: [], 2: []}
@@ -749,7 +788,10 @@ class Associations:
     def _is_wordofinterest(self, word, index):
         """ Compare words with the list of words of interest.
         Return True if in the list; never accept lacunae or buffers """
-        
+
+        if self.words[1] == ['*'] and word not in [LINEBREAK, BUFFER]:
+            return True
+
         if word in [LINEBREAK, BUFFER]:
             return False
         
@@ -961,18 +1003,10 @@ class Associations:
             else:
                 return bf
 
-        def apply_weight(ab, a, b, cs, F, preweight):
-            """ Adjust frequencies according to context similarity
-            facto F """
-
+        def apply_weight(ab, a, b, cs, F):
             # Apply only to joint-probability
-            abf = ab * F
-            
-            # Apply to margins as well
-            if preweight in ('all', 2):
-                a = max(a - (ab-abf), 1)
-                b = max(b - (ab-abf), 1)
-                cs = max(cs - (ab-abf), 1)
+            abf = ab * (F**self.factorpower)
+
             return abf, a, b, cs
             
         self.measure = measure.__name__
@@ -991,8 +1025,8 @@ class Associations:
         # DEBUG: Test that Σ f(a,b) = Σ f(a) = Σ f(b) = N holds
         # when calculating I(σ+;σ+)
         
-        #_abs = 0
-        #_as = sum([v for k, v in self.word_freqs.items() if k not in IGNORE])
+        _abs = 0
+        _as = sum([v for k, v in self.word_freqs.items() if k not in IGNORE])
 
         """ Set scoring function according to weighting type """
         #if self.preweight:
@@ -1004,7 +1038,7 @@ class Associations:
             w1, w2 = bigram
 
             # DEBUG, see above
-            #_abs += scale(self.bigram_freqs[bigram])
+            _abs += scale(self.bigram_freqs[bigram])
 
             if self._is_valid(w1, w2, self.bigram_freqs[bigram]):
 
@@ -1018,16 +1052,17 @@ class Associations:
                 else:
                     csim_factor = 0
 
+                """ Smooth for zero-division errors """
                 csim_factor = max(1-csim_factor, 00000.1)
 
-                """ Pre-weight frequencies if flag is set """
-                if self.preweight is not None and self.formulaic_measure is not None:
+                """ Apply CSW to joint distribution if postweight not selected;
+                otherwise apply CSW on the final score """               
+                if self.formulaic_measure is not None and not self.postweight:
                     ab, a, b, cs = apply_weight(self.bigram_freqs[bigram],
                                                 freq_w1,
                                                 freq_w2,
                                                 self.corpus_size,
-                                                csim_factor,
-                                                self.preweight)
+                                                csim_factor)
                     factor = 1
                 else:
                     ab, a, b, cs = (self.bigram_freqs[bigram],
@@ -1060,8 +1095,10 @@ class Associations:
                 finally:
                     pass
 
-        # DEBUG, see above: print f(a,b) and f(b) = f(a)
-        #print(round(_abs), _as)
+        # DEBUG, see above: print f(a,b) and f(b) = f(a) if calculated for *
+        print('DEBUG:sanity check:',round(_abs), _as)
+        for k,v in self.bigram_freqs.items():
+            pass#print(k,v)
 
         """ Store words of interest for JSON """
         scored['words1'] = list(set(w1list))
@@ -1192,6 +1229,7 @@ class Associations:
                          'word1 freq': freqs[w1],
                          'word2 freq': freqs[w2],
                          'bigram freq': bigram['frequency'],
+                         #'metaa': meta,
                          'score':
                              float(self._trim_float(bigram['score'])),
                          'distance': bigram['distance'],
@@ -1214,7 +1252,7 @@ class Associations:
                     i = 0
                 if i < limit:
                     data = [line[0]+' '+line[1]] + [line[2]+' '+line[3]] + [line[7]]
-                    output.append(';'.join(self._stringify(data)))
+                    output.append('\t'.join(self._stringify(data)))
                 lastword = line[0]
                 i += 1
 
@@ -1227,34 +1265,19 @@ class Associations:
         else:
             IO.write_file(filename, '\n'.join(output))
 
-            
-#z = Text('testi_meta.txt')
-#x = Associations(z, words1=['cat'], symmetry=True)
-#x.count_bigrams()
-
-z = Text('testi.txt')
 
 
-#z = Text('all_Aug18_nolex_genres')
-#z.uniquify(10)
-wz = 4
+z = Text('oracc-akkadian.txt')
 
-
-
-#y = z.tf_idf(40)
-
-
-
-x = Associations(z, words1=['kissa', 'rapu'],
-                 preweight=None,
-                 formulaic_measure=None,
+wz = 5
+x = Associations(z, words1=['nakru'],
+                 formulaic_measure=Lazy,
                  minfreq_b = 2,
                  minfreq_ab = 2,
-                 #preweight=True,
-                 symmetry=False,
-                 #track_distance = True,
-                 windowsize=wz)
+                 symmetry=True,
+                 windowsize=wz,
+                 factorpower=2)
+A = x.score(PMIDELTA)
+x.print_scores(A, limit=50, gephi=True, filename='oracc.pmi')
 
 
-A = x.score(NPMI3)
-x.print_scores(A, limit=100, gephi=False, filename='poista.txt')
