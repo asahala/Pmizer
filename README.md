@@ -1,6 +1,6 @@
 # pmizer2.py
 
-Version 2 of pmizer with better handling for duplication. 
+Version 2 of pmizer with better handling for duplication. This should be used instead of old pmizer.py!
 
 
 # pmizer.py
