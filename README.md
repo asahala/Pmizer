@@ -2,6 +2,7 @@
 
 Version 2 of pmizer with better handling for duplication. This should be used instead of old pmizer.py! Proper documentation coming soon, now texts have to be loaded as objects!
 
+**Note**: Pmizer word embeddings are no longer developed. The new tool is [pmi-embeddings](https://github.com/asahala/pmi-embeddings/)
 
 # pmizer.py
 
