@@ -14,7 +14,7 @@ from urllib.parse import quote
 import random
 from collections import Counter
 
-__version__ = "2020-11-27"
+__version__ = "2021-01-01"
 
 print('pmizer.py version %s\n' % __version__)
 
@@ -66,6 +66,8 @@ Critical bug fixes:
 Other fixes:
 
         2020-11-27: Preweight is now default.
+
+        2020-01-01: Additional measures such as Jaccard etc.
                     
 
 How to use? =====================================================
@@ -185,9 +187,11 @@ Measures take four arguments:
    b  = freq of b
    cz = corpus size
    factor = CSW value (this is used if postweight is set)
+   oo = estimated number of all bigrams in the corpus
 
 ==================================================================== """
 
+## POINTWISE MUTUAL INFORMATION BASED MEASURES
 
 class PMI:
     """ Pointwise Mutual Information. The score orientation is
@@ -195,11 +199,11 @@ class PMI:
     minimum = -math.inf
 
     @staticmethod
-    def raw(ab, a, b, cz):
+    def raw(ab, a, b, cz, oo=None):
         return (ab/cz) / ((a/cz)*(b/cz))
 
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         return factor * (_log(ab*cz) - _log(a*b))
 
 class PMIDELTA:
@@ -209,7 +213,7 @@ class PMIDELTA:
     minimum = -math.inf
 
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         weight = (ab/(ab+1)) * (min(a,b)/(min(a,b,)+1))
         return factor * weight * (_log(ab*cz) - _log(a*b))
 
@@ -222,7 +226,7 @@ class PMICDS:
     ## WORKS ONLY IN MATRIX FACTORIZATION
 
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         alpha = 0.75
         return max(factor * _log((cz*ab) / (a*(b**alpha))),0)
 
@@ -232,7 +236,7 @@ class NPMI:
     minimum = -1.0
 
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         return factor * (PMI.score(ab, a, b, cz, 1) / -_log(ab/cz))
 
 
@@ -241,7 +245,7 @@ class PMISIG:
     minimum = -math.inf
 
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         pa = a / cz
         pb = b / cz
         return factor * (math.sqrt(min(pa, pb))\
@@ -254,7 +258,7 @@ class SCISIG:
     minimum = 0
 
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         pa = a / cz
         pb = b / cz
         pab = ab / cz
@@ -268,7 +272,7 @@ class cPMI:
     minimum = -math.inf
 
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         delta = 0.9
         t = math.sqrt(_log(delta) / (-2 * a))
         return _log(ab / (a * b / cz) + a * t) * factor
@@ -281,7 +285,7 @@ class PMI2:
     minimum = -math.inf
     
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         return (PMI.score(ab, a, b, cz, 1) - (-_log(ab/cz))) / factor
 
         
@@ -292,7 +296,7 @@ class PMI3:
     minimum = -math.inf
     
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         return (PMI.score(ab, a, b, cz, 1) - (-(2*_log(ab/cz)))) / factor
 
 class SPMI:
@@ -301,7 +305,7 @@ class SPMI:
     minimum = 0
 
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         return max(3 + PMI.score(ab, a, b, cz, factor), 0)
 
 class PPMI:
@@ -310,7 +314,7 @@ class PPMI:
     minimum = 0
     
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         return max(PMI.score(ab, a, b, cz, factor), 0)
 
 
@@ -321,7 +325,7 @@ class PPMI2:
     minimum = 0
     
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         return factor * (2 ** PMI2.score(ab, a, b, cz, 1))
 
 class PPMI3:
@@ -333,7 +337,7 @@ class PPMI3:
     minimum = 0
     
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         return factor * (2 ** PMI3.score(ab, a, b, cz, 1))
  
 
@@ -345,7 +349,7 @@ class NPMI2:
     minimum = 0
     
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         ind = 2 ** _log(ab / cz)
         base_score = 2 ** PMI2.score(ab, a, b, cz, 1) - ind
         return (max(base_score / (1 - ind), 0) * factor) ** (1/3)
@@ -359,12 +363,126 @@ class NPMI3:
     minimum = 0
     
     @staticmethod
-    def score(ab, a, b, cz, factor):
+    def score(ab, a, b, cz, factor, oo=None):
         pab = (ab/cz)
         base_score = 2 ** PMI3.score(ab, a, b, cz, 1) - (pab**2)
         return (max(base_score / (pab - (pab**2)), 0) * factor) ** (1/3)
 
+# Other measures and statistical tests
+
+class NormalizedExpectation:
+    """ Normalized Expectation as in Pecina 2006
+
+       2f(xy) / f(x)f(y) """
+
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        return (2*ab*factor) / (a+b)
+
+
+class tTest:
+    """ Student's t-test """
+
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        ind = a*b/cz
+        return ((ab*factor)-ind) / math.sqrt(factor*ab*(1-(factor*ab/cz)))
+
+
+class zScore:
+    """ Z-score """
+
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        ind = a*b/cz
+        return ((ab*factor)-ind) / math.sqrt(ind*(1-(ind/cz)))
+
+# Association coefficients, See Pecina 2006
+
+def c_table(ab, a, b, cz, factor, oo=None):
+    """ Return contingency table. Note that the total number of
+    co-occurrences in the corpus is based on an estimate, because
+    not all bigrams are calculated for efficiency """
+    ab = ab*factor
+    A = ab
+    B = a - ab
+    C = b - ab
+    D = oo - ab
+    return A, B, C, D
+
+
+class Jaccard:
+
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        A, B, C, D = c_table(ab, a, b, cz, factor, oo)
+        return A / (A+B+C)
+
+
+class Odds:
+
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        A, B, C, D = c_table(ab, a, b, cz, factor, oo)
+        return (A*D)/(B*C)
+
+
+
+class Simpson:
+    """ Note: this has an extreme low-freq bias """
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        A, B, C, D = c_table(ab, a, b, cz, factor, oo)
         
+        return A / min(A+B, A+C)
+
+
+class BraunBlanquet:
+
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        A, B, C, D = c_table(ab, a, b, cz, factor, oo)
+        
+        return A / max(A+B, A+C)
+
+
+class Pearson:
+
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        A, B, C, D = c_table(ab, a, b, cz, factor, oo)
+        u = (A * D) - (B * C)
+        d = math.sqrt((A+B)*(A+C)*(D+B)*(D+C))
+        return u / d
+
+    
+class UnigramSubtuples:
+
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        A, B, C, D = c_table(ab, a, b, cz, factor, oo)
+
+        subs = [1/A, 1/B, 1/C, 1/D]
+        return _log((A*D)/(B*C)) - (3.29 * math.sqrt(sum(subs)))
+
 """ ====================================================================
 Context Similarity Weighting ===========================================
 ========================================================================
@@ -1038,6 +1156,10 @@ class Associations:
         #    SCORE = measure.score_pre_csim
         #else:
         #    SCORE = measure.score
+
+        """ EXPERIMENTAL:
+        Estimate number of all bigrams for contingency tables """
+        all_bigrams = scale((self.windowsize-1) * self.corpus_size)
         
         for bigram in self.bigram_freqs.keys():
             w1, w2 = bigram
@@ -1076,7 +1198,7 @@ class Associations:
                                     self.corpus_size)
                     factor = csim_factor
                     
-                score = measure.score(scale(ab), a, b, cs, factor)
+                score = measure.score(scale(ab), a, b, cs, factor, all_bigrams)
 
                 data = {'score': score,
                         'distance': distance,
@@ -1256,7 +1378,7 @@ class Associations:
                 if lastword != line[0]:
                     i = 0
                 if i < limit:
-                    data = [line[0]+' '+line[1]] + [line[2]+' '+line[3]] + [line[7]]
+                    data = [line[0]+' '+line[1]] + [line[2]+' '+line[3]+' ('+str(line[5]) +')'] + [line[7]]
                     output.append('\t'.join(self._stringify(data)))
                 lastword = line[0]
                 i += 1
@@ -1272,8 +1394,8 @@ class Associations:
 
 
 
-z = Text('oracc-akkadian.txt')
-
+z = Text('data/akk.txt')
+z.read_dict()
 wz = 5
 x = Associations(z, words1=['nakru'],
                  formulaic_measure=Lazy,
@@ -1281,8 +1403,8 @@ x = Associations(z, words1=['nakru'],
                  minfreq_ab = 2,
                  symmetry=True,
                  windowsize=wz,
-                 factorpower=2)
-A = x.score(PMIDELTA)
-x.print_scores(A, limit=50, gephi=True, filename='oracc.pmi')
+                 factorpower=3)
+A = x.score(UnigramSubtuples)
+x.print_scores(A, limit=15, gephi=True, filename='oracc.pmi')
 
 
