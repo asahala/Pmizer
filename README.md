@@ -4,6 +4,8 @@ Version 2 of pmizer with better handling for duplication. This should be used in
 
 **Note**: Pmizer word embeddings are no longer developed. The new tool is [pmi-embeddings](https://github.com/asahala/pmi-embeddings/)
 
+See some demo results from [here](https://docs.google.com/spreadsheets/d/1W5rJugBPhdD1kbg7piYcB2_3hhPGrnZV4ViCUO5fD1c/edit?usp=sharing) for Akkadian word **nakru** with various association measures.
+
 # pmizer.py
 
 A tool for calculating word association measures. 
