@@ -4,8 +4,6 @@ This is version 2 of pmizer with better handling for duplication. As of now, thi
 
 See some demo results from [here](https://docs.google.com/spreadsheets/d/1W5rJugBPhdD1kbg7piYcB2_3hhPGrnZV4ViCUO5fD1c/edit?usp=sharing) for Akkadian word **nakru** with various association measures.
 
-**Note**: Pmizer word embeddings are no longer developed. The new tool is [pmi-embeddings](https://github.com/asahala/pmi-embeddings/)
-
 
 # pmizer.py
 
@@ -308,14 +306,6 @@ A tool for calculating word association measures.
      data by using term frequency - inverse document frequency metric.
      
 
-# TODO
-
-Clean repo, document Pmizer 2 features
-
 # PMI2VEC/pmi2vec.py
 
-Builds word vectors (embeddings) based on PMI scores by using singular value decomposition. Requires numpy and sklearn. 
-
-Todo:
-- Binary format
-- Merge with pmizer
+Now obsolete and Pmizer/Pmizer2 word embeddings are no longer developed. The new tool is [pmi-embeddings](https://github.com/asahala/pmi-embeddings/)
