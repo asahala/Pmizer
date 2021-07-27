@@ -308,4 +308,4 @@ A tool for calculating word association measures.
 
 # PMI2VEC/pmi2vec.py
 
-Now obsolete and Pmizer/Pmizer2 word embeddings are no longer developed. The new tool is [pmi-embeddings](https://github.com/asahala/pmi-embeddings/)
+Now obsolete. Pmizer/Pmizer2 word embeddings are no longer developed. The new tool is [pmi-embeddings](https://github.com/asahala/pmi-embeddings/)
