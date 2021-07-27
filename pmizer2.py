@@ -1393,18 +1393,21 @@ class Associations:
             IO.write_file(filename, '\n'.join(output))
 
 
-
+# Load test corpus and translations for words, and set window size
 z = Text('data/akk.txt')
 z.read_dict()
 wz = 5
-x = Associations(z, words1=['nakru'],
-                 formulaic_measure=Lazy,
-                 minfreq_b = 2,
-                 minfreq_ab = 2,
-                 symmetry=True,
-                 windowsize=wz,
-                 factorpower=3)
-A = x.score(UnigramSubtuples)
+
+x = Associations(z, words1=['nakru'],      # keyword of interest
+                 formulaic_measure=Lazy,   # use CSW
+                 minfreq_b = 2,            # min collocate freq
+                 minfreq_ab = 2,           # min bigram freq
+                 symmetry=True,            # use symmetric window
+                 windowsize=wz,            # window size 
+                 factorpower=3)            # CSW k-value
+A = x.score(UnigramSubtuples)              # Select measure (e.g, PMI, PMI2, Jaccard...)
+
+# Print results
 x.print_scores(A, limit=15, gephi=True, filename='oracc.pmi')
 
 
