@@ -1,6 +1,6 @@
 # pmizer2.py
 
-This is version 2 of pmizer with better handling for duplication. As of now, this should be used instead of old pmizer.py! Now texts have to be loaded as objects! Run  ```pmizer2.py``` for demo using data in the ```/data``` folder.
+This is version 2 of pmizer with better handling for duplication. As of now, this should be used instead of old pmizer.py! Run  ```pmizer2.py``` for demo using data in the ```/data``` folder.
 
 See some demo results from [here](https://docs.google.com/spreadsheets/d/1W5rJugBPhdD1kbg7piYcB2_3hhPGrnZV4ViCUO5fD1c/edit?usp=sharing) for Akkadian word **nakru** with various association measures.
 
