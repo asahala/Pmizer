@@ -4,6 +4,7 @@ This is version 2 of pmizer with better handling for duplication. As of now, thi
 
 See some demo results from [here](https://docs.google.com/spreadsheets/d/1W5rJugBPhdD1kbg7piYcB2_3hhPGrnZV4ViCUO5fD1c/edit?usp=sharing) for Akkadian word **nakru** with various association measures.
 
+### Use github.com/asahala/pmi-embeddings for word vectors!
 
 # pmizer.py
 
