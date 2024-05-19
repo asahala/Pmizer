@@ -1,4 +1,6 @@
+import re
 from pmizer2 import Text, Associations, Lazy, PMIDELTA
+
 
 """ ==============================================================
 
@@ -87,7 +89,7 @@ x = Associations(z,
                  words1=['kakku[weapon]N'],      # keyword of interest
                  #conditions=[re.compile('.*naparšudu.*')],
                  #positive_condition=False,
-                 stopwords=[re.compile('.*([RD]N).*')]
+                 #stopwords=[re.compile('.*([RD]N).*')],
                  formulaic_measure=Lazy,   # use CSW
                  minfreq_b = 2,            # min collocate freq
                  minfreq_ab = 2,           # min bigram freq
