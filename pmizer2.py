@@ -14,7 +14,7 @@ from urllib.parse import quote
 import random
 from collections import Counter
 
-__version__ = "2021-01-01"
+__version__ = "2024-05-19"
 
 print('pmizer.py version %s\n' % __version__)
 
@@ -37,6 +37,8 @@ VERBOSE = True            # Print more info
 IGNORE = [LINEBREAK, BUFFER]
 
 """ /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+
+                                                   Aleksi Sahala 2019-2024
 
 Critical bug fixes:
 
@@ -62,6 +64,8 @@ Critical bug fixes:
                     from counts properly (i.e. subtracts 1 from
                     the denominator).
 
+        2024-05-19: Fix links to Korp.
+        
 
 Other fixes:
 
@@ -114,8 +118,12 @@ def make_korp_oracc_url(w1, w2, wz):
     """ Generate URL for Oracc in Korp """
     w1 = re.sub('(.+)_.+?', r'\1', w1)
     w2 = re.sub('(.+)_.+?', r'\1', w2)
-    base = 'https://korp.csc.fi/test-as/?mode=other_languages#'\
-           '?lang=fi&stats_reduce=word'
+
+    w1 = w1.split('[')[0]
+    w2 = w2.split('[')[0]
+    
+    base = 'https://www.kielipankki.fi/korp/?mode=other_languages#'\
+           '?lang=en&stats_reduce=word'
     cqp = '&cqp=%5Blemma%20%3D%20%22{w1}%22%5D%20%5B%5D%7B0,'\
           '{wz}%7D%20%5Blemma%20%3D%20%22{w2}%22%5D'\
           .format(w1=quote(w1), w2=quote(w2), wz=wz)
@@ -123,6 +131,10 @@ def make_korp_oracc_url(w1, w2, wz):
             ',oracc_dcclt,oracc_dccmt,oracc_ecut,oracc_etcsri,oracc_hbtin,oracc_obmc,'\
             'oracc_riao,oracc_ribo,oracc_rimanum,oracc_rinap,oracc_saao,'\
             'oracc_others&search_tab=1&search=cqp&within=paragraph'
+
+    ## TEMPORARY FOR ALP COURSE, REMOVE THE LINE BELOW
+    corps = '&corpus=oracc2021_rinap&search_tab=1&search=cqp&within=paragraph'
+
     return base+cqp+corps
 
 """ ====================================================================
@@ -1223,7 +1235,7 @@ class Associations:
                     pass
 
         # DEBUG, see above: print f(a,b) and f(b) = f(a) if calculated for *
-        print('DEBUG:sanity check:',round(_abs), _as)
+        # print('DEBUG:sanity check:',round(_abs), _as)
         for k,v in self.bigram_freqs.items():
             pass#print(k,v)
 
@@ -1333,7 +1345,7 @@ class Associations:
                     original[slot+1] = merge_dict({k: val}, original[slot+1])
             return original  
 
-        header = ['word1', 'attr1', 'word2', 'attr2', 'word1 freq', 'word2 freq',
+        header = ['word1',  'word2',  'word1 freq', 'word2 freq',
                   'bigram freq', 'score', 'distance', 'similarity', 'url']
         sort_indices = [header.index(x) for x in sortby]
 
@@ -1351,8 +1363,8 @@ class Associations:
                 meta = collate_meta(bigram['metadata'])
                 items = {'word1': w1,
                          'word2': w2,
-                         'attr1': scores['translations'][w1],
-                         'attr2': scores['translations'][w2],
+                         #'attr1': scores['translations'][w1],
+                         #'attr2': scores['translations'][w2],
                          'word1 freq': freqs[w1],
                          'word2 freq': freqs[w2],
                          'bigram freq': bigram['frequency'],
@@ -1392,22 +1404,99 @@ class Associations:
         else:
             IO.write_file(filename, '\n'.join(output))
 
+""" ==============================================================
 
-# Load test corpus and translations for words, and set window size
-z = Text('data/akk.txt')
-z.read_dict()
-wz = 5
+This is the part of the script that can be safely modified.
 
-x = Associations(z, words1=['nakru'],      # keyword of interest
+:: DEFINING KEYWORDS:
+
+  words1=['sisû[horse]N', 'parû[mule]N']
+
+         Would find all collocates for sisû and parû. You can
+         also use regular expressions but they must be
+         precompiled, for example.
+
+   words1=[re.compile('banû.+')]
+
+         Will find collocates for banû regarldess of their sense
+         or part-of-speech. If you want to only find banûs that
+         are adjectives, you can do
+
+   words1=[re.compile('banû.+AJ')]
+
+
+:: DEFINING CLOSED COLLOCATE SETS
+
+         You can limit your possible collocates by defining words2.
+         For example, if you only want to find collocates that
+         are divine names, use
+
+   words2=[re.compile('.*DN.*')]
+
+
+:: DEFINING STOPWORDS
+
+         Stopwords can be used to filter out groups of words
+         from your collocate lists. For example, if you want
+         to filter out all proper names and royal names, you
+         can use the regular expression [RD]N, that is (RN|DN).
+
+    stopwords=[re.compile('.*([RD]N).*')]
+
+         In general its faster to define stopwords in inverse
+         by using words2, e.g.
+
+    words2=[re.compile('.*\](N|AJ|V).*')]
+
+         disallows ALL other collocates than nouns, adjectives
+         and verbs. 
+
+
+:: DEFINING CONDITIONS (ADVANCED FEATURE)
+
+         To define conditions for your collocates, you can
+         use arguments `conditions` and `positive_condition`.
+         For example, the following arguments
+
+    words1=['kakku[weapon]N'],
+    conditions=[re.compile('.*naparšudu.*')],
+    positive_condition=False,
+
+         will calculate collocates for kakku[weapon]N ONLY
+         if the word naparšudu does not exist within the window.
+         On the contrary, the following would find collocates
+         for kakku[weapon]N only if naparšudu exists in the
+         window.
+
+    words1=['kakku[weapon]N'],
+    conditions=[re.compile('.*naparšudu.*')],
+    positive_condition=True,
+
+
+:: AUTO-GENERATING STOPWORD LISTS (ADVANCED FEATURE)
+   
+    stopwords=z.tf_idf(threshold=1000)
+
+          Will generate a list of 1000 most uninteresting words
+          in the text by using TF-IDF. Note that this is a
+          part of the Text class.           
+
+============================================================== """
+
+z = Text('dataset.txt') # Dataset in TPL format
+wz = 5 # Window size
+x = Associations(z,
+                 words1=['kakku[weapon]N'],      # keyword of interest
+                 #conditions=[re.compile('.*naparšudu.*')],
+                 #positive_condition=False,
                  formulaic_measure=Lazy,   # use CSW
                  minfreq_b = 2,            # min collocate freq
                  minfreq_ab = 2,           # min bigram freq
                  symmetry=True,            # use symmetric window
                  windowsize=wz,            # window size 
                  factorpower=3)            # CSW k-value
-A = x.score(UnigramSubtuples)              # Select measure (e.g, PMI, PMI2, Jaccard...)
 
-# Print results
-x.print_scores(A, limit=15, gephi=True, filename='oracc.pmi')
+A = x.score(PMIDELTA)              # Select measure (e.g, PMI, PMI2, Jaccard...)
 
-
+# Save results
+x.print_scores(A, limit=20, gephi=False, filename='oracc.tsv')
