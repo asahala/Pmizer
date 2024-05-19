@@ -1500,4 +1500,4 @@ x = Associations(z,
 A = x.score(PMIDELTA)              # Select measure (e.g, PMI, PMI2, Jaccard...)
 
 # Save results
-x.print_scores(A, limit=20, gephi=False, filename='oracc.tsv')
+x.print_scores(A, limit=20, gephi=False, filename='results.tsv')
