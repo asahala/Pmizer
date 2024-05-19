@@ -39,6 +39,7 @@ IGNORE = [LINEBREAK, BUFFER]
 """ /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
 
                                                    Aleksi Sahala 2019-2024
+                                                        github.com/asahala
 
 Critical bug fixes:
 
