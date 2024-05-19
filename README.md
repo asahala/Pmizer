@@ -260,7 +260,7 @@ A tool for calculating word association measures.
          PMI3            PMI^3 (Daille 1994)
          PPMI            Positive PMI. As PMI but discards negative scores.
          PPMI2           Positive PMI^2 (Role & Nadif 2011)
-         NPMI2           Normalized Positive PMI^2 (Sahala 2019)
+         NPMI2           Normalized Positive PMI^2 (Sahala & Linden 2020)
          PMISIG          Washtell & Markert (2009)
          SCISIG          Semi-Conditional Information (Washtell & Markert 2009)
          PMIDELTA        Smoothed PMI (Pantel & Lin 2002)
@@ -269,9 +269,9 @@ A tool for calculating word association measures.
 
       Some atypical measures for collocates are available too: 
       
-         tTest           
-         zScore          
-         Jaccard          
+         tTest             Student's t-test
+         zScore            Z-score
+         Jaccard           Jaccard index 
          Simpson
          BraunBlanquet
          Pearson
