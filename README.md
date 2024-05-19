@@ -263,7 +263,21 @@ A tool for calculating word association measures.
          NPMI2           Normalized Positive PMI^2 (Sahala 2019)
          PMISIG          Washtell & Markert (2009)
          SCISIG          Semi-Conditional Information (Washtell & Markert 2009)
-     
+         PMIDELTA        Smoothed PMI (Pantel & Lin 2002)
+         PMICDS          Distribution Smoothed PMI (Levy, Goldberg & Dagan 2015) 
+         cPMI            Corpus level significant PMI (Damani 2013)
+
+      Some atypical measures for collocates are available too: 
+      
+         tTest           
+         zScore          
+         Jaccard          
+         Simpson
+         BraunBlanquet
+         Pearson
+         UnigramSubtuples
+         Odds
+         
      PPMI is recommended for matrix factorization. (N)PMI2 or SCISIG for
      traditional collocation analysis.
      
