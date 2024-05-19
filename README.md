@@ -132,7 +132,7 @@ A tool for calculating word association measures.
                          asymmetric            ^--+--+
      
      ========================================================================
-     Associations.read_raw(filename) ========================================
+     Associations.read_raw(filename) ============================ pmizer.py =
      ========================================================================
      
       ´filename´         (str) name of the input file. Bigrams are NOT allowed 
@@ -148,7 +148,19 @@ A tool for calculating word association measures.
      
      NOTE: Window size must always be specified before reading the file
      for setting correct buffers (or paddings).
+
+     ************************************************************************
+     NOTE NOTE! Pmizer2 has a separate Text class for this purpose.
+     To load text, use
+
+       text = Text('yourdatafile.txt')
+
+     Then pass your text to the Associations class as an argument
      
+       associations = Associations(text, **kwargs)
+
+     See end of this file for demo.
+
      ========================================================================
      Associations.read_dictionary(filename) =================================
      ========================================================================
@@ -160,7 +172,11 @@ A tool for calculating word association measures.
                          The translations will be shown for each word in the 
                          results. 
      
-                         Using dictionaries is optional.    
+                         Using dictionaries is optional. In Pmizer2 it is 
+                         recommeded to use input text format with trans-
+                         lations, e.g. kakku[weapon]N instead of just kakku
+                         in Akkadian. Pmizer2 no longer prints translations
+                         from dictionaries at all!
      
      ========================================================================
      Associations.set_constraints(**kwargs) =================================
@@ -170,14 +186,16 @@ A tool for calculating word association measures.
      
       ´freq_threshold´   (int) minimum allowed bigram frequency. This can be
                          used to counter the low-frequency bias of certain
-                         PMI variants. In other words, this defines how many
-                         times to words must co-occur within the window to
+       (in pmizer2:)     PMI variants. In other words, this defines how many
+       ´minfreq_b´       times to words must co-occur within the window to
                          be accepted.
+
+                        
                          
       ´freq_threshold_collocate´   (int) minimum allowed collocate frequency.
                          That is, how frequent word must be to be accepted.
-                         It may be useful to discard words that occur only
-                         once or twice in the corpus if bigram frequency
+       (in pmizer2:)     It may be useful to discard words that occur only
+       ´minfreq_ab´      once or twice in the corpus if bigram frequency
                          threshold is set very low.
      
       ´words1´ &         (list) words of interest AKA keywords, the white 
