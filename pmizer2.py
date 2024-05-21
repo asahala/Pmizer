@@ -1391,8 +1391,10 @@ class Associations:
                 if lastword != line[0]:
                     i = 0
                 if i < limit:
-                    data = [line[0]+' '+line[1]] + [line[2]+' '+line[3]+' ('+str(line[5]) +')'] + [line[7]]
-                    output.append('\t'.join(self._stringify(data)))
+                    #data = [line[0]+' '+line[1]] + [line[2]+' '+line[3]+' ('+str(line[5]) +')'] + [line[7]]
+                    data = line[0] + ';' + line[1] + ';' + str(line[5])#' #+ [line[2]+' '+line[3]+' ('+str(line[5]) +')'] + [line[7]]
+                    #output.append(';'.join(self._stringify(data)))
+                    output.append(data)
                 lastword = line[0]
                 i += 1
 
@@ -1485,9 +1487,11 @@ This is the part of the script that can be safely modified.
 ============================================================== """
 
 z = Text('dataset.txt') # Dataset in TPL format
-wz = 5 # Window size
+wz = 5                  # Window size
 x = Associations(z,
-                 words1=['kakku[weapon]N'],      # keyword of interest
+                 words1=['qaštu[bow]N'],
+                 #words1=['sisû[horse]N'],
+                 words2=[re.compile('.*\]N$')],      # keyword of interest
                  #conditions=[re.compile('.*naparšudu.*')],
                  #positive_condition=False,
                  formulaic_measure=Lazy,   # use CSW
@@ -1495,9 +1499,9 @@ x = Associations(z,
                  minfreq_ab = 2,           # min bigram freq
                  symmetry=True,            # use symmetric window
                  windowsize=wz,            # window size 
-                 factorpower=3)            # CSW k-value
+                 factorpower=0)            # CSW k-value
 
-A = x.score(PMIDELTA)              # Select measure (e.g, PMI, PMI2, Jaccard...)
+A = x.score(NPMI2)              # Select measure (e.g, PMI, PMI2, Jaccard...)
 
 # Save results
-x.print_scores(A, limit=20, gephi=False, filename='results.tsv')
+x.print_scores(A, limit=10, gephi=True, filename='results.tsv')
