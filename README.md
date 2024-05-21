@@ -6,6 +6,10 @@ See some demo results from [here](https://docs.google.com/spreadsheets/d/1W5rJug
 
 ### Use github.com/asahala/pmi-embeddings for word vectors!
 
+# Online documentation
+
+Read ALP course documentation [here](https://docs.google.com/document/d/1wMPzLhC68gkmGgjcp_4GAPCdyybHNJ8r20Y7wOYeN3E/edit?usp=sharing)
+
 # pmizer.py
 
 A tool for calculating word association measures. 
