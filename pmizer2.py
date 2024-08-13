@@ -19,7 +19,7 @@ __version__ = "2024-05-19"
 print('pmizer.py version %s\n' % __version__)
 
 """ Constants """
-WINDOW_SCALING = True     # Apply window size penalty to scores
+WINDOW_SCALING = False    # Apply window size penalty to scores
 LOGBASE = 2               # Logarithm base; set to None for ln
 LACUNAE = ['_']           # List of symbols for lacunae or removed words
 LINEBREAK = '<LB>'        # Line break or text boundary
@@ -203,6 +203,13 @@ Measures take four arguments:
    oo = estimated number of all bigrams in the corpus
 
 ==================================================================== """
+
+class FREQ:
+    minimum = 0
+
+    @staticmethod
+    def score(ab, a, b, cz, factor, oo=None):
+        return ab
 
 ## POINTWISE MUTUAL INFORMATION BASED MEASURES
 
@@ -1486,22 +1493,22 @@ This is the part of the script that can be safely modified.
 
 ============================================================== """
 
-z = Text('dataset.txt') # Dataset in TPL format
+z = Text('rinap.txt') # Dataset in TPL format
 wz = 5                  # Window size
 x = Associations(z,
-                 words1=['qaštu[bow]N'],
-                 #words1=['sisû[horse]N'],
+                 words1=[re.compile('.*camel.*')],
+                 #words1=['sugullu[herd]N'],
                  words2=[re.compile('.*\]N$')],      # keyword of interest
-                 #conditions=[re.compile('.*naparšudu.*')],
+                 #conditions=[re.compile('.*priest.*')],
                  #positive_condition=False,
                  formulaic_measure=Lazy,   # use CSW
                  minfreq_b = 2,            # min collocate freq
                  minfreq_ab = 2,           # min bigram freq
                  symmetry=True,            # use symmetric window
                  windowsize=wz,            # window size 
-                 factorpower=0)            # CSW k-value
+                 factorpower=3)            # CSW k-value
 
-A = x.score(NPMI2)              # Select measure (e.g, PMI, PMI2, Jaccard...)
+A = x.score(PMIDELTA)              # Select measure (e.g, PMI, PMI2, Jaccard...)
 
 # Save results
 x.print_scores(A, limit=10, gephi=True, filename='results.tsv')
